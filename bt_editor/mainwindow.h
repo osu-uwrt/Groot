@@ -90,6 +90,8 @@ public slots:
 
     void on_actionSave_triggered();
 
+    void on_actionSaveAs_triggered();
+
     void on_splitter_splitterMoved(int pos = 0, int index = 0);
 
     void on_toolButtonReorder_pressed();
@@ -137,6 +139,8 @@ public:
     void lockEditing(const bool locked);
 
 private:
+
+    void saveCurrentTree(bool forceSaveAs);
 
     void updateCurrentMode();
 
@@ -191,6 +195,7 @@ private:
     NodeModels _treenode_models;
 
     QString _main_tree;
+    QString _current_file_name;
 
     SidepanelEditor* _editor_widget;
     SidepanelReplay* _replay_widget;

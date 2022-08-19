@@ -178,6 +178,9 @@ MainWindow::MainWindow(GraphicMode initial_mode, QWidget *parent) :
     connect( ui->toolButtonSaveFile, &QToolButton::clicked,
             this, &MainWindow::on_actionSave_triggered );
 
+    connect( ui->toolButtonSaveFileAs, &QToolButton::clicked,
+             this, &MainWindow::on_actionSaveAs_triggered );
+
     connect( save_shortcut, &QShortcut::activated, this, &MainWindow::on_actionSave_triggered );
 
     connect( _replay_widget, &SidepanelReplay::changeNodeStyle,
@@ -611,47 +614,12 @@ void MainWindow::recursivelySaveNodeCanonically(QXmlStreamWriter &stream, const 
 
 void MainWindow::on_actionSave_triggered()
 {
-    for (auto& it: _tab_info)
-    {
-        auto& container = it.second;
-        if( !container->containsValidTree() )
-        {
-            QMessageBox::warning(this, tr("Oops!"),
-                                 tr("Malformed behavior tree. File can not be saved"),
-                                 QMessageBox::Cancel);
-            return;
-        }
-    }
+    saveCurrentTree(false);
+}
 
-    if( _tab_info.size() == 1 )
-    {
-        _main_tree = _tab_info.begin()->first;
-    }
-
-    QSettings settings;
-    QString directory_path  = settings.value("MainWindow.lastSaveDirectory",
-                                            QDir::currentPath() ).toString();
-
-    auto fileName = QFileDialog::getSaveFileName(this, "Save BehaviorTree to file",
-                                                 directory_path, "BehaviorTree files (*.xml)");
-    if (fileName.isEmpty()){
-        return;
-    }
-    if (!fileName.endsWith(".xml"))
-    {
-        fileName += ".xml";
-    }
-
-    QString xml_text = saveToXML();
-
-    QFile file(fileName);
-    if (file.open(QIODevice::WriteOnly)) {
-        QTextStream stream(&file);
-        stream << xml_text << endl;
-    }
-
-    directory_path = QFileInfo(fileName).absolutePath();
-    settings.setValue("MainWindow.lastSaveDirectory", directory_path);
+void MainWindow::on_actionSaveAs_triggered() 
+{
+    saveCurrentTree(true);
 }
 
 void MainWindow::onAutoArrange()
@@ -1246,6 +1214,56 @@ void MainWindow::onActionClearTriggered(bool create_new)
     _monitor_widget->clear();
 #endif
 
+}
+
+
+void MainWindow::saveCurrentTree(bool forceSaveAs) {
+    for (auto& it: _tab_info)
+    {
+        auto& container = it.second;
+        if( !container->containsValidTree() )
+        {
+            QMessageBox::warning(this, tr("Oops!"),
+                                 tr("Malformed behavior tree. File can not be saved"),
+                                 QMessageBox::Cancel);
+            return;
+        }
+    }
+
+    if( _tab_info.size() == 1 )
+    {
+        _main_tree = _tab_info.begin()->first;
+    }
+
+    QSettings settings;
+    QString directory_path  = settings.value("MainWindow.lastSaveDirectory",
+                                            QDir::currentPath() ).toString();
+
+    QString fileName = _current_file_name;
+    if(fileName.isEmpty() || forceSaveAs) {
+        fileName = QFileDialog::getSaveFileName(this, "Save BehaviorTree to file",
+                                                 directory_path, "BehaviorTree files (*.xml)");
+    }
+
+    if (fileName.isEmpty()){
+        return;
+    }
+    if (!fileName.endsWith(".xml"))
+    {
+        fileName += ".xml";
+    }
+
+    QString xml_text = saveToXML();
+
+    QFile file(fileName);
+    if (file.open(QIODevice::WriteOnly)) {
+        QTextStream stream(&file);
+        stream << xml_text << endl;
+    }
+
+    directory_path = QFileInfo(fileName).absolutePath();
+    _current_file_name = fileName;
+    settings.setValue("MainWindow.lastSaveDirectory", directory_path);
 }
 
 
