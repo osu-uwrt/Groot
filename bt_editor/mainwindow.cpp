@@ -126,8 +126,6 @@ MainWindow::MainWindow(GraphicMode initial_mode, QWidget *parent) :
     QShortcut* redo_shortcut = new QShortcut(QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_Z), this);
     connect( redo_shortcut, &QShortcut::activated, this, &MainWindow::onRedoInvoked );
 
-    QShortcut* save_shortcut = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_S), this);
-
     connect( _editor_widget, &SidepanelEditor::nodeModelEdited,
             this, &MainWindow::onTreeNodeEdited);
 
@@ -181,8 +179,6 @@ MainWindow::MainWindow(GraphicMode initial_mode, QWidget *parent) :
     connect( ui->toolButtonSaveFileAs, &QToolButton::clicked,
              this, &MainWindow::on_actionSaveAs_triggered );
 
-    connect( save_shortcut, &QShortcut::activated, this, &MainWindow::on_actionSave_triggered );
-
     connect( _replay_widget, &SidepanelReplay::changeNodeStyle,
             this, &MainWindow::onChangeNodesStatus);
 
@@ -225,6 +221,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
     }
 
     settings.setValue("StartupDialog.Mode", toStr( _current_mode ) );
+
+    ensureTreeSaved();
 
     QMainWindow::closeEvent(event);
 }
@@ -402,6 +400,7 @@ void MainWindow::loadFromXML(const QString& xml_text)
     else{
         onSceneChanged();
         onPushUndo();
+        updateTreeSaved(true);
     }
 }
 
@@ -437,6 +436,7 @@ void MainWindow::on_actionLoad_triggered()
     }
 
     loadFromXML(xml_text);
+    _current_file_name = fileName;
 }
 
 QString MainWindow::saveToXML() const
@@ -634,6 +634,8 @@ void MainWindow::onSceneChanged()
     ui->toolButtonLayout->setEnabled(valid_BT);
     ui->toolButtonReorder->setEnabled(valid_BT);
     ui->toolButtonReorder->setEnabled(valid_BT);
+
+    updateTreeSaved(false);
 
     ui->actionSave->setEnabled(valid_BT);
     QPixmap pix;
@@ -1263,7 +1265,30 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
 
     directory_path = QFileInfo(fileName).absolutePath();
     _current_file_name = fileName;
+    updateTreeSaved(true);
     settings.setValue("MainWindow.lastSaveDirectory", directory_path);
+}
+
+
+void MainWindow::updateTreeSaved(bool saved) {
+    this->saved = saved;
+    
+    //which icon to use on save button?
+    QString icoFile = (saved ? ":/icons/svg/saved_white.svg" : ":/icons/svg/unsaved_white.svg");
+    ui->toolButtonSaveFile->setIcon(QIcon(icoFile));
+}
+
+
+void MainWindow::ensureTreeSaved() {
+    if(_current_mode == GraphicMode::EDITOR && !saved) {
+        int save = QMessageBox::question(this, "Save Tree?", 
+                                        "You have unsaved changes to your Behavior Tree. Do you want to save them?", 
+                                        QMessageBox::No | QMessageBox::Yes);
+        
+        if(save == QMessageBox::Yes) {
+            saveCurrentTree(false);
+        }
+    }
 }
 
 
@@ -1292,6 +1317,7 @@ void MainWindow::updateCurrentMode()
     ui->toolButtonLoadRemote->setHidden( true );
 
     ui->toolButtonSaveFile->setHidden( NOT_EDITOR );
+    ui->toolButtonSaveFileAs->setHidden( NOT_EDITOR );
     ui->toolButtonReorder->setHidden( NOT_EDITOR );
 
     if( _current_mode == GraphicMode::EDITOR )
@@ -1433,6 +1459,10 @@ void MainWindow::on_actionEditor_mode_triggered()
 void MainWindow::on_actionMonitor_mode_triggered()
 {
 #ifdef ZMQ_FOUND
+    if(_current_mode == GraphicMode::EDITOR) {
+        ensureTreeSaved();
+    }
+
     QMessageBox::StandardButton res = QMessageBox::Ok;
 
     if( currentTabInfo()->scene()->nodes().size() > 0)
@@ -1454,6 +1484,10 @@ void MainWindow::on_actionMonitor_mode_triggered()
 
 void MainWindow::on_actionReplay_mode_triggered()
 {
+    if(_current_mode == GraphicMode::EDITOR) {
+        ensureTreeSaved();
+    }
+
     QMessageBox::StandardButton res = QMessageBox::Ok;
 
     if( currentTabInfo()->scene()->nodes().size() > 0)

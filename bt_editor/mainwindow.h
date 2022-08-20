@@ -142,6 +142,10 @@ private:
 
     void saveCurrentTree(bool forceSaveAs);
 
+    void updateTreeSaved(bool saved);
+    
+    void ensureTreeSaved();
+
     void updateCurrentMode();
 
     bool eventFilter(QObject *obj, QEvent *event) override;
@@ -173,6 +177,8 @@ private:
 
     void loadSavedStateFromJson(SavedState state);
 
+    
+
     QtNodes::Node *subTreeExpand(GraphicContainer& container,
                        QtNodes::Node &node,
                        SubtreeExpandOption option);
@@ -196,6 +202,8 @@ private:
 
     QString _main_tree;
     QString _current_file_name;
+
+    bool saved;
 
     SidepanelEditor* _editor_widget;
     SidepanelReplay* _replay_widget;
