@@ -10,6 +10,7 @@
 #include <deque>
 #include <thread>
 #include <mutex>
+#include <experimental/filesystem>
 #include <nodes/DataModelRegistry>
 
 #include "graphic_container.h"
@@ -45,7 +46,7 @@ public:
     explicit MainWindow(GraphicMode initial_mode, QWidget *parent = nullptr);
     ~MainWindow() override;
 
-    void loadFromXML(const QString &xml_text);
+    bool loadFromXML(const QString &xml_text, const QString &workspace_text = "");
 
     QString saveToXML() const ;
 
@@ -140,9 +141,11 @@ public:
 
 private:
 
+    bool documentFromText(QString text, QDomDocument *out);
+
     void saveCurrentTree(bool forceSaveAs);
 
-    void updateTreeSaved(bool saved);
+    void updateTreeInfo(bool saved, QString file);
     
     void ensureTreeSaved();
 
@@ -198,7 +201,9 @@ private:
     SavedState _current_state;
     QtNodes::PortLayout _current_layout;
 
-    NodeModels _treenode_models;
+    NodeModels 
+        _treenode_models, // registered collection of all node models in the tree.
+        _workspace_models; // unregistered collection of node models in the workspace
 
     QString _main_tree;
     QString _current_file_name;

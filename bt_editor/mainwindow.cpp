@@ -89,7 +89,7 @@ MainWindow::MainWindow(GraphicMode initial_mode, QWidget *parent) :
     }
     //------------------------------------------------------
 
-    _editor_widget = new SidepanelEditor(_model_registry.get(), _treenode_models, this);
+    _editor_widget = new SidepanelEditor(_model_registry.get(), _treenode_models, _workspace_models, this);
     _replay_widget = new SidepanelReplay(this);
 
     ui->leftFrame->layout()->addWidget( _editor_widget );
@@ -272,41 +272,19 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-void MainWindow::loadFromXML(const QString& xml_text)
+bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_text)
 {
-    QDomDocument document;
-    try{
-        QString errorMsg;
-        int errorLine;
-        if( ! document.setContent(xml_text, &errorMsg, &errorLine ) )
-        {
-            throw std::runtime_error( tr("Error parsing XML (line %1): %2").arg(errorLine).arg(errorMsg).toStdString() );
-        }
-        //---------------
-        std::vector<QString> registered_ID;
-        for (const auto& it: _treenode_models)
-        {
-            registered_ID.push_back( it.first );
-        }
-        std::vector<QString> error_messages;
-        bool done = VerifyXML(document, registered_ID, error_messages );
-
-        if( !done )
-        {
-            QString merged_error;
-            for (const auto& err: error_messages)
-            {
-                merged_error += err + "\n";
-            }
-            throw std::runtime_error( merged_error.toStdString() );
-        }
+    //create a representation of the document being loaded
+    QDomDocument docToLoad;
+    if(!documentFromText(xml_text, &docToLoad)) {
+        return false;
     }
-    catch( std::runtime_error& err)
-    {
-        QMessageBox messageBox;
-        messageBox.critical(this,"Error parsing the XML", err.what() );
-        messageBox.show();
-        return;
+
+    //load workspace. will default to document if the workspace is invalid
+    QDomDocument workspaceDoc;
+    bool workspaceNotEmpty = true;
+    if(!documentFromText(workspace_text, &workspaceDoc)) {
+        workspaceNotEmpty = false;
     }
 
     //---------------
@@ -315,8 +293,18 @@ void MainWindow::loadFromXML(const QString& xml_text)
     auto saved_state = _current_state;
     auto prev_tree_model = _treenode_models;
 
+    //load workspace
+    if(workspaceNotEmpty) {
+        auto workspace_root = workspaceDoc.documentElement();
+        _workspace_models = ReadTreeNodesModel(workspace_root);
+        for(const auto& model: _workspace_models) {
+            onAddToModelRegistry(model.second);
+        }
+    }
+
+    //load desired tree
     try {
-        auto document_root = document.documentElement();
+        auto document_root = docToLoad.documentElement();
 
         if( document_root.hasAttribute("main_tree_to_execute"))
         {
@@ -327,7 +315,21 @@ void MainWindow::loadFromXML(const QString& xml_text)
 
         for( const auto& model: custom_models)
         {
-            onAddToModelRegistry( model.second );
+            NodeModel node = model.second;
+            onAddToModelRegistry( node );
+
+            //is model in workspace?
+            bool inWorkspace = false;
+            for(const auto n : _workspace_models) {
+                if(n.second == node) {
+                    inWorkspace = true;
+                    break;
+                }
+            }
+
+            if(!inWorkspace) {
+                std::cout << "node " << node.registration_ID.toStdString() << " is not already in the workspace" << std::endl;
+            }
         }
 
         _editor_widget->updateTreeView();
@@ -376,6 +378,8 @@ void MainWindow::loadFromXML(const QString& xml_text)
         else{
             currentTabInfo()->nodeReorder();
         }
+
+        //TODO: remove this. if the user wants to keep the models they should add them to the workspace
         auto models_to_remove = GetModelsToRemove(this, _treenode_models, custom_models);
 
         for( QString model_name: models_to_remove )
@@ -396,12 +400,13 @@ void MainWindow::loadFromXML(const QString& xml_text)
         QMessageBox::warning(this, tr("Exception!"),
                              tr("It was not possible to parse the file. Error:\n\n%1"). arg( err_message ),
                              QMessageBox::Ok);
+        
+        return false;
     }
-    else{
-        onSceneChanged();
-        onPushUndo();
-        updateTreeSaved(true);
-    }
+    
+    onSceneChanged();
+    onPushUndo();
+    return true;
 }
 
 
@@ -428,6 +433,7 @@ void MainWindow::on_actionLoad_triggered()
     settings.setValue("MainWindow.lastLoadDirectory", directory_path);
     settings.sync();
 
+    //load document text from file
     QString xml_text;
 
     QTextStream in(&file);
@@ -435,8 +441,22 @@ void MainWindow::on_actionLoad_triggered()
         xml_text += in.readLine();
     }
 
-    loadFromXML(xml_text);
-    _current_file_name = fileName;
+    //load workspace text from file if a workspace is present
+    QString workspace_path = tr("%1/.groot/workspace.xml").arg(directory_path);
+    QString workspace_text = "";
+    if(QFileInfo::exists(workspace_path)) {
+        QFile workspace_file(workspace_path);
+        QTextStream workspace_in(&workspace_file);
+        while(!workspace_in.atEnd()) {
+            workspace_text += workspace_in.readLine();
+        }
+    }
+
+    bool success = loadFromXML(xml_text, workspace_text);
+    if(success) {
+        _current_file_name = fileName;
+        updateTreeInfo(true, fileName);
+    }
 }
 
 QString MainWindow::saveToXML() const
@@ -453,6 +473,7 @@ QString MainWindow::saveToXML() const
         root.setAttribute("main_tree_to_execute", _main_tree.toStdString().c_str());
     }
 
+    //encode subtrees
     for (auto& it: _tab_info)
     {
         auto& container = it.second;
@@ -635,7 +656,7 @@ void MainWindow::onSceneChanged()
     ui->toolButtonReorder->setEnabled(valid_BT);
     ui->toolButtonReorder->setEnabled(valid_BT);
 
-    updateTreeSaved(false);
+    updateTreeInfo(false, _current_file_name);
 
     ui->actionSave->setEnabled(valid_BT);
     QPixmap pix;
@@ -1218,6 +1239,51 @@ void MainWindow::onActionClearTriggered(bool create_new)
 
 }
 
+//populates out as a document representation from text
+bool MainWindow::documentFromText(QString text, QDomDocument *out) {
+    if(text.isEmpty()) {
+        return false;
+    }
+
+    QDomDocument document;
+    try{
+        QString errorMsg;
+        int errorLine;
+        if( ! document.setContent(text, &errorMsg, &errorLine ) )
+        {
+            throw std::runtime_error( tr("Error parsing XML (line %1): %2").arg(errorLine).arg(errorMsg).toStdString() );
+        }
+        //---------------
+        std::vector<QString> registered_ID;
+        for (const auto& it: _treenode_models)
+        {
+            registered_ID.push_back( it.first );
+        }
+        std::vector<QString> error_messages;
+        bool done = VerifyXML(document, registered_ID, error_messages );
+
+        if( !done )
+        {
+            QString merged_error;
+            for (const auto& err: error_messages)
+            {
+                merged_error += err + "\n";
+            }
+            throw std::runtime_error( merged_error.toStdString() );
+        }
+    }
+    catch( std::runtime_error& err)
+    {
+        QMessageBox messageBox;
+        messageBox.critical(this,"Error parsing the XML", err.what() );
+        messageBox.show();
+        return false;
+    }
+
+    *out = document;
+    return true;
+}
+
 
 void MainWindow::saveCurrentTree(bool forceSaveAs) {
     for (auto& it: _tab_info)
@@ -1255,6 +1321,10 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
         fileName += ".xml";
     }
 
+    //save workspace
+
+
+    //save current tree
     QString xml_text = saveToXML();
 
     QFile file(fileName);
@@ -1264,18 +1334,23 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
     }
 
     directory_path = QFileInfo(fileName).absolutePath();
-    _current_file_name = fileName;
-    updateTreeSaved(true);
+    updateTreeInfo(true, fileName);
     settings.setValue("MainWindow.lastSaveDirectory", directory_path);
 }
 
-
-void MainWindow::updateTreeSaved(bool saved) {
-    this->saved = saved;
-    
+//use saved for current save status and _current_file_name for current file name 
+void MainWindow::updateTreeInfo(bool saved, QString fileName) {
     //which icon to use on save button?
+    this->saved = saved;
     QString icoFile = (saved ? ":/icons/svg/saved_white.svg" : ":/icons/svg/unsaved_white.svg");
     ui->toolButtonSaveFile->setIcon(QIcon(icoFile));
+
+    _current_file_name = fileName;
+    QString fileStr = (!fileName.isEmpty() ? fileName : "No File loaded");
+    QString asterisk = (saved || fileName.isEmpty() ? "" : "*");
+
+    fileStr = tr("%1%2").arg(fileStr, asterisk); //add asterisk if file is unsaved
+    this->setWindowTitle(tr("Groot (%1)").arg(fileStr));
 }
 
 

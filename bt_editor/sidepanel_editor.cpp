@@ -16,10 +16,12 @@
 
 SidepanelEditor::SidepanelEditor(QtNodes::DataModelRegistry *registry,
                                  NodeModels &tree_nodes_model,
+                                 NodeModels &workspace_models,
                                  QWidget *parent) :
     QFrame(parent),
     ui(new Ui::SidepanelEditor),
     _tree_nodes_model(tree_nodes_model),
+    _workspace_models(workspace_models),
     _model_registry(registry)
 {
     ui->setupUi(this);   
@@ -82,6 +84,7 @@ void SidepanelEditor::updateTreeView()
       auto item = new QTreeWidgetItem(parent, {ID});
       const bool is_builtin = BuiltinNodeModels().count( ID ) > 0;
       const bool is_editable = (!ui->buttonLock->isChecked() && !is_builtin);
+      const bool not_in_workspace = !isInNodeModels(_workspace_models, it.second) && !isInNodeModels(BuiltinNodeModels(), it.second);
 
       QFont font = item->font(0);
       font.setItalic( is_builtin );
@@ -89,10 +92,22 @@ void SidepanelEditor::updateTreeView()
       item->setFont(0, font);
       item->setData(0, Qt::UserRole, ID);
 
+      //color blue-ish if node is editable (and in workspace)
+      QString editable_tip = (is_editable ? "editable" : "not editable");
       if (is_editable)
       {
         item->setForeground(0, QBrush(QColor(70, 110, 154)));
       }
+      
+      //color red-ish if node is custom and not in workspace
+      QString workspace_tip = (is_builtin ? "built-in" : (not_in_workspace ? "not in workspace" : "in workspace"));
+      if(not_in_workspace) {
+        item->setForeground(0, QBrush(QColor(154, 70, 70)));
+      }
+
+      //assemble tooltip string
+      QString tooltip = tr("%1: %2, %3").arg(ID, workspace_tip, editable_tip);
+      item->setToolTip(0, tooltip);
     }
 
     ui->paletteTreeWidget->expandAll();

@@ -18,6 +18,7 @@ class SidepanelEditor : public QFrame
 public:
     explicit SidepanelEditor(QtNodes::DataModelRegistry* registry,
                              NodeModels& tree_nodes_model,
+                             NodeModels &workspace_models,
                              QWidget *parent = nullptr);
     ~SidepanelEditor();
 
@@ -64,6 +65,7 @@ signals:
 private:
     Ui::SidepanelEditor *ui;
     NodeModels &_tree_nodes_model;
+    NodeModels &_workspace_models;
     QtNodes::DataModelRegistry* _model_registry;
     std::map<QString, QTreeWidgetItem*> _tree_view_category_items;
 

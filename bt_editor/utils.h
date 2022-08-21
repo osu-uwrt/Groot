@@ -35,6 +35,8 @@ std::set<QString> GetModelsToRemove(QWidget* parent,
                                     NodeModels& prev_models,
                                     const NodeModels& new_models);
 
+bool isInNodeModels(NodeModels models, NodeModel model);
+
 BT::NodeType convert( Serialization::NodeType type);
 
 BT::NodeStatus convert(Serialization::NodeStatus type);

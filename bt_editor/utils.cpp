@@ -567,6 +567,18 @@ std::set<QString> GetModelsToRemove(QWidget* parent,
     return prev_custom_models;
 }
 
+bool isInNodeModels(NodeModels models, NodeModel model) {
+    //is node model in the workspace?
+    bool inWorkspace = false;
+    for(const auto& n : models) {
+        if(model == n.second) {
+            inWorkspace = true;
+            break;
+        }
+    }
+    return inWorkspace;
+}
+
 BT::NodeType convert(Serialization::NodeType type)
 {
     switch (type)
