@@ -48,7 +48,9 @@ public:
 
     bool loadFromXML(const QString &xml_text, const QString &workspace_text = "");
 
-    QString saveToXML() const ;
+    QString saveDocToXML() const ;
+
+    QString saveWorkspaceToXML() const ;
 
     GraphicContainer* currentTabInfo();
 
@@ -144,6 +146,12 @@ private:
     bool documentFromText(QString text, QDomDocument *out);
 
     void saveCurrentTree(bool forceSaveAs);
+
+    void encodeSubtree(QString ID, QDomDocument *doc, QDomElement root, GraphicContainer *container) const;
+    
+    void encodeSubtree(QString ID, QDomDocument *doc, QDomElement root) const;
+
+    void encodeNodeModel(NodeModel model, QString id, QDomDocument doc, QDomElement *node) const;
 
     void updateTreeInfo(bool saved, QString file);
     

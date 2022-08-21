@@ -51,7 +51,7 @@ void EditorTest::loadFile()
     main_win->on_actionClear_triggered();
     main_win->loadFromXML( file_xml );
 
-    QString saved_xml = main_win->saveToXML();
+    QString saved_xml = main_win->saveDocToXML();
 
     QFile qFile("crossdoor_EditorTest_loadFile.xml");
     if (qFile.open(QIODevice::WriteOnly))
@@ -110,7 +110,7 @@ void EditorTest::loadFile()
 
     //---------------------------------
     // Expanded tree should save the same file
-    QString saved_xml_expanded = main_win->saveToXML();
+    QString saved_xml_expanded = main_win->saveDocToXML();
     QVERIFY2( saved_xml_expanded.simplified() == saved_xml.simplified(),
               "Loaded and saved XMl are not the same" );
 
@@ -137,7 +137,7 @@ void EditorTest::savedFileSameAsOriginal()
     main_win->on_actionClear_triggered();
     main_win->loadFromXML( file_xml );
 
-    QString saved_xml = main_win->saveToXML();
+    QString saved_xml = main_win->saveDocToXML();
 
     QFile qFile("crossdoor_EditorTest_savedFileSameAsOriginal.xml");
     if (qFile.open(QIODevice::WriteOnly))

@@ -84,7 +84,7 @@ void SidepanelEditor::updateTreeView()
       auto item = new QTreeWidgetItem(parent, {ID});
       const bool is_builtin = BuiltinNodeModels().count( ID ) > 0;
       const bool is_editable = (!ui->buttonLock->isChecked() && !is_builtin);
-      const bool not_in_workspace = !isInNodeModels(_workspace_models, it.second) && !isInNodeModels(BuiltinNodeModels(), it.second);
+      const bool not_in_workspace = !isInNodeModels(_workspace_models, it.first) && !isInNodeModels(BuiltinNodeModels(), it.first);
 
       QFont font = item->font(0);
       font.setItalic( is_builtin );
@@ -218,6 +218,9 @@ void SidepanelEditor::onContextMenu(const QPoint& pos)
         }
     }
 
+    //find if the model is in the workspace or not
+    const bool in_workspace = isInNodeModels(_workspace_models, selected_name);
+
     QMenu menu(this);
 
     QAction* edit   = menu.addAction("Edit");
@@ -236,6 +239,16 @@ void SidepanelEditor::onContextMenu(const QPoint& pos)
     {
         emit modelRemoveRequested(selected_name);
     } );
+
+    if(!in_workspace) {
+        QAction *addToWorkspace = menu.addAction("Add To Workspace");
+        
+        connect( addToWorkspace, &QAction::triggered, this, [this, selected_name]()
+        {
+            _workspace_models.insert( {selected_name, getModelByName(_tree_nodes_model, selected_name)} );
+            updateTreeView();
+        } );
+    }
 
     QPoint globalPos = ui->paletteTreeWidget->mapToGlobal(pos);
     menu.exec(globalPos);

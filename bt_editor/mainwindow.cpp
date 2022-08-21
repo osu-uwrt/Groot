@@ -34,6 +34,8 @@
 
 #include "ui_about_dialog.h"
 
+#define workspace_path(directory_path) tr("%1/.groot/workspace.xml").arg(directory_path)
+
 using QtNodes::DataModelRegistry;
 using QtNodes::FlowView;
 using QtNodes::FlowScene;
@@ -317,19 +319,6 @@ bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_t
         {
             NodeModel node = model.second;
             onAddToModelRegistry( node );
-
-            //is model in workspace?
-            bool inWorkspace = false;
-            for(const auto n : _workspace_models) {
-                if(n.second == node) {
-                    inWorkspace = true;
-                    break;
-                }
-            }
-
-            if(!inWorkspace) {
-                std::cout << "node " << node.registration_ID.toStdString() << " is not already in the workspace" << std::endl;
-            }
         }
 
         _editor_widget->updateTreeView();
@@ -442,7 +431,7 @@ void MainWindow::on_actionLoad_triggered()
     }
 
     //load workspace text from file if a workspace is present
-    QString workspace_path = tr("%1/.groot/workspace.xml").arg(directory_path);
+    QString workspace_path = workspace_path(directory_path);
     QString workspace_text = "";
     if(QFileInfo::exists(workspace_path)) {
         QFile workspace_file(workspace_path);
@@ -459,7 +448,7 @@ void MainWindow::on_actionLoad_triggered()
     }
 }
 
-QString MainWindow::saveToXML() const
+QString MainWindow::saveDocToXML() const
 {
     QDomDocument doc;
 
@@ -476,27 +465,7 @@ QString MainWindow::saveToXML() const
     //encode subtrees
     for (auto& it: _tab_info)
     {
-        auto& container = it.second;
-        auto  scene = container->scene();
-
-        auto abs_tree = BuildTreeFromScene(container->scene());
-        auto abs_root = abs_tree.rootNode();
-        if( abs_root->children_index.size() == 1 &&
-            abs_root->model.registration_ID == "Root"  )
-        {
-            // mofe to the child of ROOT
-            abs_root = abs_tree.node( abs_root->children_index.front() );
-        }
-
-        QtNodes::Node* root_node = abs_root->graphic_node;
-
-        root.appendChild( doc.createComment(COMMENT_SEPARATOR) );
-        QDomElement root_element = doc.createElement("BehaviorTree");
-
-        root_element.setAttribute("ID", it.first.toStdString().c_str());
-        root.appendChild(root_element);
-
-        RecursivelyCreateXml(*scene, doc, root_element, root_node );
+        encodeSubtree((QString) it.first, &doc, root, (GraphicContainer*) it.second);
     }
     root.appendChild( doc.createComment(COMMENT_SEPARATOR) );
 
@@ -514,19 +483,7 @@ QString MainWindow::saveToXML() const
 
         QDomElement node = doc.createElement( QString::fromStdString(toStr(model.type)) );
 
-        if( !node.isNull() )
-        {
-            node.setAttribute("ID", ID);
-
-            for(const auto& port_it: model.ports)
-            {
-                const auto& port_name = port_it.first;
-                const auto& port = port_it.second;
-
-                QDomElement port_element = writePortModel(port_name, port, doc);
-                node.appendChild( port_element );
-            }
-        }
+        encodeNodeModel(model, ID, doc, &node);
         root_models.appendChild(node);
     }
     root.appendChild(root_models);
@@ -534,6 +491,41 @@ QString MainWindow::saveToXML() const
 
     return xmlDocumentToString(doc);
 }
+
+
+QString MainWindow::saveWorkspaceToXML() const {
+    QDomDocument doc;
+    
+    const char *COMMENT_SEPARATOR = " ////////// ";
+
+    QDomElement root = doc.createElement("root");
+    doc.appendChild(root);
+
+    QDomElement models = doc.createElement("TreeNodesModel");
+    for(const auto& it : _treenode_models) {
+        QString ID = it.first;
+        NodeModel model = it.second;
+
+        if( BuiltinNodeModels().count(ID) != 0 )
+        {
+            continue;
+        }
+
+        if(model.type == NodeType::SUBTREE) {
+            encodeSubtree(ID, &doc, root);
+        } else {
+            QDomElement node = doc.createElement(QString::fromStdString(toStr(model.type)));
+            encodeNodeModel(model, ID, doc, &node);
+            models.appendChild(node);
+        }
+    }
+
+    root.appendChild(models);
+    root.appendChild(doc.createComment(COMMENT_SEPARATOR));
+
+    return xmlDocumentToString(doc);
+}
+
 
 QString MainWindow::xmlDocumentToString(const QDomDocument &document) const
 {
@@ -1321,11 +1313,10 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
         fileName += ".xml";
     }
 
-    //save workspace
-
+    
 
     //save current tree
-    QString xml_text = saveToXML();
+    QString xml_text = saveDocToXML();
 
     QFile file(fileName);
     if (file.open(QIODevice::WriteOnly)) {
@@ -1334,8 +1325,79 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
     }
 
     directory_path = QFileInfo(fileName).absolutePath();
+
+    //save workspace
+    QString workspace_text = saveWorkspaceToXML();
+    
+    QFile workspaceFile(workspace_path(directory_path));
+    if (workspaceFile.open(QIODevice::WriteOnly)) {
+        QTextStream stream(&workspaceFile);
+        stream << workspace_text << endl;
+        file.close();
+    }
+
     updateTreeInfo(true, fileName);
     settings.setValue("MainWindow.lastSaveDirectory", directory_path);
+}
+
+
+void MainWindow::encodeSubtree(QString ID, QDomDocument *doc, QDomElement root, GraphicContainer *container) const {
+    auto scene = container->scene();
+
+    auto abs_tree = BuildTreeFromScene(container->scene());
+    auto abs_root = abs_tree.rootNode();
+    if( abs_root->children_index.size() == 1 &&
+        abs_root->model.registration_ID == "Root"  )
+    {
+        // mofe to the child of ROOT
+        abs_root = abs_tree.node( abs_root->children_index.front() );
+    }
+
+    QtNodes::Node* root_node = abs_root->graphic_node;
+
+    QDomElement root_element = doc->createElement("BehaviorTree");
+
+    root_element.setAttribute("ID", ID.toStdString().c_str());
+    root.appendChild(root_element);
+
+    RecursivelyCreateXml(*scene, *doc, root_element, root_node );
+}
+
+
+void MainWindow::encodeSubtree(QString ID, QDomDocument *doc, QDomElement root) const {
+    //encode subtrees
+    GraphicContainer* container = nullptr;
+    
+    //find the container containing the subtree to be encoded
+    for (auto& it: _tab_info) {
+        if(it.first == ID) {
+            container = it.second;
+            break;
+        }
+    }
+
+    if(container == nullptr) { //container was never found
+        return;
+    }
+
+    //encode subtree with found container
+    encodeSubtree(ID, doc, root, container);
+}
+
+void MainWindow::encodeNodeModel(NodeModel model, QString id, QDomDocument doc, QDomElement *node) const {
+    if( !node->isNull() )
+    {
+        node->setAttribute("ID", id);
+
+        for(const auto& port_it: model.ports)
+        {
+            const auto& port_name = port_it.first;
+            const auto& port = port_it.second;
+
+            QDomElement port_element = writePortModel(port_name, port, doc);
+            node->appendChild( port_element );
+        }
+    }
 }
 
 //use saved for current save status and _current_file_name for current file name 
