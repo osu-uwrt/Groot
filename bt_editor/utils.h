@@ -10,6 +10,8 @@
 #include <behaviortree_cpp_v3/flatbuffers/BT_logger_generated.h>
 #include <behaviortree_cpp_v3/flatbuffers/bt_flatbuffer_helper.h>
 
+QString readFileToString(const QString& fileName);
+
 QtNodes::Node* findRoot(const QtNodes::FlowScene &scene);
 
 std::vector<QtNodes::Node *> getChildren(const QtNodes::FlowScene &scene,
@@ -33,6 +35,7 @@ QtNodes::Node* GetParentNode(QtNodes::Node* node);
 
 std::set<QString> GetModelsToRemove(QWidget* parent,
                                     NodeModels& prev_models,
+                                    NodeModels& workspace_models,
                                     const NodeModels& new_models);
 
 bool isInNodeModels(NodeModels models, QString id);

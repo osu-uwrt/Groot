@@ -14,6 +14,24 @@ using QtNodes::DataModelRegistry;
 using QtNodes::Node;
 using QtNodes::FlowScene;
 
+//reads a file into a string. returns an empty string if errors are encountered
+QString readFileToString(const QString& fileName) {
+    QString contents = "";
+
+    QFile file(fileName);
+    if(!file.exists()) {
+        return "";
+    }
+    
+    if(file.open(QIODevice::ReadOnly)) {
+        while(!file.atEnd()) {
+            contents += file.readLine();
+        }
+    }
+
+    return contents;
+}
+
 QtNodes::Node* findRoot(const QtNodes::FlowScene &scene)
 {
     Node* root = nullptr;
@@ -537,6 +555,7 @@ QtNodes::Node *GetParentNode(QtNodes::Node *node)
 
 std::set<QString> GetModelsToRemove(QWidget* parent,
                                     NodeModels& prev_models,
+                                    NodeModels& workspace_models,
                                     const NodeModels& new_models)
 {
     std::set<QString> prev_custom_models;
@@ -547,23 +566,14 @@ std::set<QString> GetModelsToRemove(QWidget* parent,
         {
             const QString& model_name = it.first;
             if( BuiltinNodeModels().count(model_name) == 0 &&
-                new_models.count(model_name) == 0)
+                new_models.count(model_name) == 0 &&
+                workspace_models.count(model_name) == 0)
             {
                 prev_custom_models.insert( model_name );
             }
         }
     }
 
-    if( prev_custom_models.size() > 0 )
-    {
-        int ret = QMessageBox::question(parent, "Clear Palette?",
-                                        "Do you want to remove the previously loaded custom nodes?",
-                                        QMessageBox::No | QMessageBox::Yes );
-        if( ret == QMessageBox::No)
-        {
-            prev_custom_models.clear();
-        }
-    }
     return prev_custom_models;
 }
 

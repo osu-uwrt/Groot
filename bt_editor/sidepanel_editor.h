@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QTreeWidgetItem>
 #include <QTableWidgetItem>
+#include <QCheckBox>
 #include "XML_utilities.hpp"
 
 namespace Ui {
@@ -50,6 +51,8 @@ private slots:
 
 signals:
 
+    void paletteEdited();
+
     void addNewModel(const NodeModel &new_model);
 
     void modelRemoveRequested(QString ID);
@@ -68,6 +71,9 @@ private:
     NodeModels &_workspace_models;
     QtNodes::DataModelRegistry* _model_registry;
     std::map<QString, QTreeWidgetItem*> _tree_view_category_items;
+    bool askBeforeRemovingWorkNode;
+
+    bool tryRemoveFromWorkspace(QString name);
 
     NodeModels importFromXML(QFile *file);
 

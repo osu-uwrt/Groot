@@ -819,7 +819,7 @@ QToolButton:disabled{
     <property name="title">
      <string>File</string>
     </property>
-    <addaction name="actionClear"/>
+    <addaction name="actionNew"/>
     <addaction name="separator"/>
     <addaction name="actionLoad"/>
     <addaction name="actionSave"/>
@@ -881,9 +881,15 @@ QToolButton:disabled{
     <string>Load from remote server</string>
    </property>
   </action>
-  <action name="actionClear">
+  <action name="actionNew">
    <property name="text">
-    <string>Clear</string>
+    <string>New</string>
+   </property>
+   <property name="toolTip">
+    <string>New Tree</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+N</string>
    </property>
   </action>
   <action name="actionEditor_mode">

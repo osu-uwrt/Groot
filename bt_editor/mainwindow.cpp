@@ -34,7 +34,8 @@
 
 #include "ui_about_dialog.h"
 
-#define workspace_path(directory_path) tr("%1/.groot/workspace.xml").arg(directory_path)
+#define workspace_dir(directory_path) tr("%1/.groot").arg(directory_path)
+#define workspace_path(directory_path) tr("%1/workspace.xml").arg(workspace_dir(directory_path))
 
 using QtNodes::DataModelRegistry;
 using QtNodes::FlowView;
@@ -254,6 +255,9 @@ GraphicContainer* MainWindow::createTab(const QString &name)
     connect( ti, &GraphicContainer::undoableChange,
             this, &MainWindow::onSceneChanged );
 
+    connect( _editor_widget, &SidepanelEditor::paletteEdited, 
+            this, &MainWindow::onSidePaletteChanged);
+
     connect( ti, &GraphicContainer::requestSubTreeExpand,
             this, &MainWindow::onRequestSubTreeExpand );
 
@@ -274,6 +278,50 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
+
+void MainWindow::tryLoadWorkspace(const QString& workspace_text, bool overwriteOldWorkspace = true) {
+    //load workspace. will default to document if the workspace is invalid
+    QDomDocument workspaceDoc;
+    bool docNotEmpty = true;
+    if(!documentFromText(workspace_text, &workspaceDoc)) {
+        docNotEmpty = false;
+        qDebug() << "No workspace detected. Loading without a workspace." << endl;
+    }
+
+    if(overwriteOldWorkspace) {
+        _workspace_models.clear();
+    }
+
+    if(docNotEmpty) {
+        auto workspace_root = workspaceDoc.documentElement();
+
+        //read tree nodes model
+        _workspace_models = ReadTreeNodesModel(workspace_root);
+        for(const auto& model: _workspace_models) {
+            if(!isInNodeModels(_treenode_models, model.first)) {
+                onAddToModelRegistry(model.second);
+            }
+        }
+
+        //read subtree definitions
+        for (auto bt_root = workspace_root.firstChildElement("BehaviorTree");
+             !bt_root.isNull();
+             bt_root = bt_root.nextSiblingElement("BehaviorTree"))
+        {
+            auto tree = BuildTreeFromXML( bt_root, _treenode_models );
+
+            if( bt_root.hasAttribute("ID") )
+            {
+                QString tree_name = bt_root.attribute("ID");
+                onCreateAbsBehaviorTree(tree, tree_name);
+            }
+        }
+
+        _editor_widget->updateTreeView();
+    }
+}
+
+
 bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_text)
 {
     //create a representation of the document being loaded
@@ -282,27 +330,11 @@ bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_t
         return false;
     }
 
-    //load workspace. will default to document if the workspace is invalid
-    QDomDocument workspaceDoc;
-    bool workspaceNotEmpty = true;
-    if(!documentFromText(workspace_text, &workspaceDoc)) {
-        workspaceNotEmpty = false;
-    }
-
     //---------------
     bool error = false;
     QString err_message;
     auto saved_state = _current_state;
     auto prev_tree_model = _treenode_models;
-
-    //load workspace
-    if(workspaceNotEmpty) {
-        auto workspace_root = workspaceDoc.documentElement();
-        _workspace_models = ReadTreeNodesModel(workspace_root);
-        for(const auto& model: _workspace_models) {
-            onAddToModelRegistry(model.second);
-        }
-    }
 
     //load desired tree
     try {
@@ -323,7 +355,7 @@ bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_t
 
         _editor_widget->updateTreeView();
 
-        onActionClearTriggered(false);
+        onClearRequested(false);
 
         const QSignalBlocker blocker( currentTabInfo() );
 
@@ -368,8 +400,9 @@ bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_t
             currentTabInfo()->nodeReorder();
         }
 
-        //TODO: remove this. if the user wants to keep the models they should add them to the workspace
-        auto models_to_remove = GetModelsToRemove(this, _treenode_models, custom_models);
+        tryLoadWorkspace(workspace_text);
+
+        auto models_to_remove = GetModelsToRemove(this, _treenode_models, _workspace_models, custom_models);
 
         for( QString model_name: models_to_remove )
         {
@@ -408,38 +441,21 @@ void MainWindow::on_actionLoad_triggered()
     QString fileName = QFileDialog::getOpenFileName(this,
                                                     tr("Load BehaviorTree from file"), directory_path,
                                                     tr("BehaviorTree files (*.xml)"));
-    if (!QFileInfo::exists(fileName)){
+    
+    
+    QString xml_text = readFileToString(fileName);
+    if(xml_text.isEmpty()) { //either nothing in file or something went wrong
         return;
     }
-
-    QFile file(fileName);
-
-    if (!file.open(QIODevice::ReadOnly)){
-        return;
-    }
-
+    
     directory_path = QFileInfo(fileName).absolutePath();
     settings.setValue("MainWindow.lastLoadDirectory", directory_path);
     settings.sync();
 
-    //load document text from file
-    QString xml_text;
-
-    QTextStream in(&file);
-    while (!in.atEnd()) {
-        xml_text += in.readLine();
-    }
-
     //load workspace text from file if a workspace is present
-    QString workspace_path = workspace_path(directory_path);
-    QString workspace_text = "";
-    if(QFileInfo::exists(workspace_path)) {
-        QFile workspace_file(workspace_path);
-        QTextStream workspace_in(&workspace_file);
-        while(!workspace_in.atEnd()) {
-            workspace_text += workspace_in.readLine();
-        }
-    }
+    QString 
+        work_path = workspace_path(directory_path),
+        workspace_text = readFileToString(work_path);
 
     bool success = loadFromXML(xml_text, workspace_text);
     if(success) {
@@ -502,7 +518,7 @@ QString MainWindow::saveWorkspaceToXML() const {
     doc.appendChild(root);
 
     QDomElement models = doc.createElement("TreeNodesModel");
-    for(const auto& it : _treenode_models) {
+    for(const auto& it : _workspace_models) {
         QString ID = it.first;
         NodeModel model = it.second;
 
@@ -513,11 +529,11 @@ QString MainWindow::saveWorkspaceToXML() const {
 
         if(model.type == NodeType::SUBTREE) {
             encodeSubtree(ID, &doc, root);
-        } else {
-            QDomElement node = doc.createElement(QString::fromStdString(toStr(model.type)));
-            encodeNodeModel(model, ID, doc, &node);
-            models.appendChild(node);
-        }
+        } 
+
+        QDomElement node = doc.createElement(QString::fromStdString(toStr(model.type)));
+        encodeNodeModel(model, ID, doc, &node);
+        models.appendChild(node);
     }
 
     root.appendChild(models);
@@ -666,6 +682,11 @@ void MainWindow::onSceneChanged()
     ui->labelSemaphore->setScaledContents(true);
 
     lockEditing( _current_mode != GraphicMode::EDITOR );
+}
+
+
+void MainWindow::onSidePaletteChanged() {
+    updateTreeInfo(false, _current_file_name);
 }
 
 
@@ -1138,7 +1159,7 @@ void MainWindow::onCreateAbsBehaviorTree(const AbsBehaviorTree &tree,
     container->loadSceneFromTree( tree );
     container->nodeReorder();
 
-    if( secondary_tabs ){
+    if( secondary_tabs ) {
       for(const auto& node: tree.nodes())
       {
         if( node.model.type == NodeType::SUBTREE && getTabByName(node.model.registration_ID) == nullptr)
@@ -1151,11 +1172,12 @@ void MainWindow::onCreateAbsBehaviorTree(const AbsBehaviorTree &tree,
     clearUndoStacks();
 }
 
-void MainWindow::on_actionClear_triggered()
+void MainWindow::on_actionNew_triggered()
 {
-    onActionClearTriggered(true);
+    onClearRequested(true);
     clearTreeModels();
     clearUndoStacks();
+    updateTreeInfo(false, "");
 }
 
 void MainWindow::onTreeNodeEdited(QString prev_ID, QString new_ID)
@@ -1208,7 +1230,7 @@ void MainWindow::onTreeNodeEdited(QString prev_ID, QString new_ID)
 }
 
 
-void MainWindow::onActionClearTriggered(bool create_new)
+void MainWindow::onClearRequested(bool create_new)
 {
     for (auto& it: _tab_info)
     {
@@ -1300,7 +1322,8 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
                                             QDir::currentPath() ).toString();
 
     QString fileName = _current_file_name;
-    if(fileName.isEmpty() || forceSaveAs) {
+    bool save_as = fileName.isEmpty() || forceSaveAs;
+    if(save_as) {
         fileName = QFileDialog::getSaveFileName(this, "Save BehaviorTree to file",
                                                  directory_path, "BehaviorTree files (*.xml)");
     }
@@ -1313,8 +1336,6 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
         fileName += ".xml";
     }
 
-    
-
     //save current tree
     QString xml_text = saveDocToXML();
 
@@ -1322,18 +1343,66 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
     if (file.open(QIODevice::WriteOnly)) {
         QTextStream stream(&file);
         stream << xml_text << endl;
+        file.close();
     }
 
     directory_path = QFileInfo(fileName).absolutePath();
 
     //save workspace
-    QString workspace_text = saveWorkspaceToXML();
-    
+    QString work_dir = workspace_dir(directory_path);
+
+    if(save_as) {
+        //if saving as, overwrite current workspace with new one, then prompt user
+        NodeModels old_workspace(_workspace_models);
+        if(QDir(work_dir).exists()) {
+            tryLoadWorkspace(readFileToString(workspace_path(directory_path)));
+        }
+
+        //figure out which nodes are not already in new workspace
+        NodeModels unworkspacedModels;
+        for(auto& it : old_workspace) {
+            if(!isInNodeModels(_workspace_models, it.first)) {
+                unworkspacedModels.insert(it);
+            }
+        }
+
+        if(unworkspacedModels.size() > 0) {
+            QString msg = "The following node models were in the previous workspace but not in the new one:\n";
+            int count = 0;
+            for(auto& it : unworkspacedModels) {
+                msg += it.first + "\n";
+                count++;
+
+                if(count >= 3) {
+                    msg += tr("...and %1 more\n").arg(unworkspacedModels.size() - 3);
+                    break;
+                }
+            }
+
+            msg += "Would you like to add them to the new workspace?";
+            int ret = QMessageBox::question(this, "Add nodes to workspace?", msg, QMessageBox::Yes | QMessageBox::No);
+
+            if(ret == QMessageBox::Yes) {
+                for(auto& it : unworkspacedModels) {
+                    _workspace_models.insert(it);
+                }
+
+                _editor_widget->updateTreeView();
+            }
+        }
+    }
+
+    QString workspace_text = saveWorkspaceToXML(); //encode workspace as xml text
+
+    if(!QDir(work_dir).exists()) {
+        QDir().mkdir(work_dir);
+    }
+
     QFile workspaceFile(workspace_path(directory_path));
     if (workspaceFile.open(QIODevice::WriteOnly)) {
         QTextStream stream(&workspaceFile);
         stream << workspace_text << endl;
-        file.close();
+        workspaceFile.close();
     }
 
     updateTreeInfo(true, fileName);
@@ -1636,7 +1705,7 @@ void MainWindow::on_actionReplay_mode_triggered()
     }
     if( res == QMessageBox::Ok)
     {
-        onActionClearTriggered(true);
+        onClearRequested(true);
         _replay_widget->clear();
         _current_mode = GraphicMode::REPLAY;
         updateCurrentMode();
@@ -1841,6 +1910,7 @@ void MainWindow::onTabSetMainTree(int tab_index)
 
 void MainWindow::clearTreeModels()
 {
+    _workspace_models.clear();
     _treenode_models = BuiltinNodeModels();
 
     std::list<QString> ID_to_delete;

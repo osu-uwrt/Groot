@@ -70,6 +70,8 @@ public slots:
 
     void onSceneChanged();
 
+    void onSidePaletteChanged();
+
     void onPushUndo();
 
     void onUndoInvoked();
@@ -117,9 +119,9 @@ public slots:
 
     void on_tabWidget_currentChanged(int index);
 
-    void onActionClearTriggered(bool create_new);
+    void onClearRequested(bool create_new);
 
-    void on_actionClear_triggered();
+    void on_actionNew_triggered();
 
     void onTreeNodeEdited(QString prev_ID, QString new_ID);
 
@@ -142,6 +144,8 @@ public:
     void lockEditing(const bool locked);
 
 private:
+
+    void tryLoadWorkspace(const QString& workspace_text, bool overwriteOldWorkspace);
 
     bool documentFromText(QString text, QDomDocument *out);
 
