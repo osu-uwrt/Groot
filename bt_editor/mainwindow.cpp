@@ -1302,11 +1302,12 @@ bool MainWindow::documentFromText(QString text, QDomDocument *out) {
 void MainWindow::saveCurrentTree(bool forceSaveAs) {
     for (auto& it: _tab_info)
     {
+        QString name = it.first; 
         auto& container = it.second;
         if( !container->containsValidTree() )
         {
             QMessageBox::warning(this, tr("Oops!"),
-                                 tr("Malformed behavior tree. File can not be saved"),
+                                 tr("Tree \"%1\" is invalid. File can not be saved").arg(name),
                                  QMessageBox::Cancel);
             return;
         }
