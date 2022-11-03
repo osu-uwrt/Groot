@@ -66,6 +66,12 @@ NodeModel buildTreeNodeModelFromXML(const QDomElement& node)
                 port_model.default_value = port_element.attribute("default");
             }
 
+            if (port_element.hasAttribute("required")) {
+                port_model.required = port_element.attribute("required") == "true";
+            } else {
+                port_model.required = false;
+            }
+
             if( port_element.hasAttribute("name") )
             {
                 auto attr_name = port_element.attribute("name");
@@ -231,6 +237,8 @@ QDomElement writePortModel(const QString& port_name, const PortModel& port, QDom
   {
     port_element.setAttribute("default", port.default_value);
   }
+
+  port_element.setAttribute("required", (port.required) ? "true" : "false");
 
   if (!port.description.isEmpty())
   {
