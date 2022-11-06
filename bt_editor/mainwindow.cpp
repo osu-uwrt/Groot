@@ -1298,13 +1298,14 @@ bool MainWindow::documentFromText(QString text, QDomDocument *out) {
     return true;
 }
 
-bool MainWindow::requiredPortsFilled() {
-    // Iterate through each sub tree;
+std::vector<MainWindow::InvalidPortMapping> MainWindow::checkRequiredPorts() {
+    std::vector<MainWindow::InvalidPortMapping> invalid_mappings;
+
+    // Iterate through each sub tree
     for (auto i : _tab_info) {
         // Get behavior tree
         AbsBehaviorTree tree = BuildTreeFromScene(i.second->scene());
-        
-        AbstractTreeNode* root = tree.rootNode();
+
         // Iterator through each node in the tree
         for (AbstractTreeNode node : tree.nodes()) {
 
@@ -1322,16 +1323,19 @@ bool MainWindow::requiredPortsFilled() {
                     // Get value from port_mapping
                     QString value = mapping.second;
                     if (value == "") {
-                        // value not assigned, return false
-                        return false;
+                        // Add invalid port mapping to be displayed to the screen
+                        MainWindow::InvalidPortMapping mapping = {  .sub_tree = i.first, 
+                                                        .node_id = node.model.registration_ID,
+                                                        .port = key};
+                        
+                        invalid_mappings.push_back(mapping);
                     }
                 }
             }
         }
-
     }
 
-    return true;
+    return invalid_mappings;
 }
 
 void MainWindow::saveCurrentTree(bool forceSaveAs) {
@@ -1353,10 +1357,17 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
         _main_tree = _tab_info.begin()->first;
     }
 
-    if (!requiredPortsFilled()) {
+    std::vector<MainWindow::InvalidPortMapping> invalid_mappings = checkRequiredPorts();
+
+    if (invalid_mappings.size() > 0) {
+        QString message = "The following ports are marked 'required' yet they have no value assigned to them:\n\n";
+
+        for (auto mapping : invalid_mappings) {
+            message += "- Port '" + mapping.port + "' in node '" + mapping.node_id + "' in tree '" + mapping.sub_tree + "'\n\n";
+        }
+
         QMessageBox::warning(this, tr("Oops!"),
-                                 tr("Make sure ports marked \"required\" are being used."),
-                                 QMessageBox::Cancel);
+                                    message);
         return;
     }
 
