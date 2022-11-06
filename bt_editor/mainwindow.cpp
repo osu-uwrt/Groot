@@ -1298,6 +1298,41 @@ bool MainWindow::documentFromText(QString text, QDomDocument *out) {
     return true;
 }
 
+bool MainWindow::requiredPortsFilled() {
+    // Iterate through each sub tree;
+    for (auto i : _tab_info) {
+        // Get behavior tree
+        AbsBehaviorTree tree = BuildTreeFromScene(i.second->scene());
+        
+        AbstractTreeNode* root = tree.rootNode();
+        // Iterator through each node in the tree
+        for (AbstractTreeNode node : tree.nodes()) {
+
+            // Get the PortModel
+            PortModels port_models = node.model.ports;
+            PortsMapping ports_mapping = node.ports_mapping;
+
+            // Iterate through each port_model. If the port is required, check to make sure
+            // the corresponding port_mapping is filled
+            for (auto mapping : ports_mapping) {
+                QString key = mapping.first;
+                auto port = port_models[key];
+
+                if (port.required) {
+                    // Get value from port_mapping
+                    QString value = mapping.second;
+                    if (value == "") {
+                        // value not assigned, return false
+                        return false;
+                    }
+                }
+            }
+        }
+
+    }
+
+    return true;
+}
 
 void MainWindow::saveCurrentTree(bool forceSaveAs) {
     for (auto& it: _tab_info)
@@ -1316,6 +1351,13 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
     if( _tab_info.size() == 1 )
     {
         _main_tree = _tab_info.begin()->first;
+    }
+
+    if (!requiredPortsFilled()) {
+        QMessageBox::warning(this, tr("Oops!"),
+                                 tr("Make sure ports marked \"required\" are being used."),
+                                 QMessageBox::Cancel);
+        return;
     }
 
     QSettings settings;

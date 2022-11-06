@@ -149,6 +149,8 @@ private:
 
     bool documentFromText(QString text, QDomDocument *out);
 
+    bool requiredPortsFilled();
+
     void saveCurrentTree(bool forceSaveAs);
 
     void encodeSubtree(QString ID, QDomDocument *doc, QDomElement root, GraphicContainer *container) const;
