@@ -1,6 +1,6 @@
 #include "BehaviorTreeNodeModel.hpp"
 #include <QBoxLayout>
-#include <QGridLayout>
+#include <QFormLayout>
 #include <QSizePolicy>
 #include <QLineEdit>
 #include <QComboBox>
@@ -68,19 +68,20 @@ BehaviorTreeDataModel::BehaviorTreeDataModel(const NodeModel &model):
                                    "border: 0px;");
 
     //--------------------------------------
-    _form_layout = new QGridLayout( _params_widget );
+    _form_layout = new QFormLayout( _params_widget );
+    _form_layout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
 
     _main_layout->addWidget(_params_widget);
     _params_widget->setStyleSheet("color: white;");
 
     _form_layout->setHorizontalSpacing(4);
     _form_layout->setVerticalSpacing(2);
+    _form_layout->setContentsMargins(0, 0, 0, 0);
 
     PortDirection preferred_port_types[3] = { PortDirection::INPUT,
                                               PortDirection::OUTPUT,
                                               PortDirection::INOUT};
 
-    int row = 0;
     for(int pref_index=0; pref_index < 3; pref_index++)
     {
         for(const auto& port_it: model.ports )
@@ -140,8 +141,7 @@ BehaviorTreeDataModel::BehaviorTreeDataModel(const NodeModel &model):
                                       "background-color: rgb(200,200,200); "
                                       "border: 0px; ");
 
-            _form_layout->addWidget(form_label, row, 0);
-            _form_layout->addWidget(form_field, row, 1);
+            _form_layout->addRow( form_label, form_field );
 
             auto paramUpdated = [this,label,form_field]()
             {
@@ -158,8 +158,6 @@ BehaviorTreeDataModel::BehaviorTreeDataModel(const NodeModel &model):
             {
                 connect( combo, &QComboBox::currentTextChanged, this, paramUpdated);
             }
-
-            row++;
         }
     }
     _params_widget->adjustSize();
@@ -261,23 +259,11 @@ void BehaviorTreeDataModel::updateNodeSize()
     //----------------------------
     int field_colum_width = DEFAULT_LABEL_WIDTH;
     int label_colum_width = 0;
-    
-    for(int row = 0; row < _form_layout->rowCount(); row++)
+
+    for(int row = 0; row< _form_layout->rowCount(); row++)
     {
-        auto label_item = _form_layout->itemAtPosition(row, 0);
-        if (!label_item) {
-            // Skip item since the label does not exist
-            continue;
-        }
-        auto label_widget = label_item->widget();
-
-        auto field_item = _form_layout->itemAtPosition(row, 1);
-        if (!field_item) {
-            // Skip item since the field does not exist
-            continue;
-        }
-        auto field_widget = field_item->widget();
-
+        auto label_widget = _form_layout->itemAt(row, QFormLayout::LabelRole)->widget();
+        auto field_widget = _form_layout->itemAt(row, QFormLayout::FieldRole)->widget();
         if(auto field_line_edit = dynamic_cast<QLineEdit*>(field_widget))
         {
             QFontMetrics fontMetrics = field_line_edit->fontMetrics();
@@ -293,13 +279,7 @@ void BehaviorTreeDataModel::updateNodeSize()
 
     for(int row = 0; row< _form_layout->rowCount(); row++)
     {
-        auto field_item = _form_layout->itemAtPosition(row, 1);
-        if (!field_item) {
-            // Skip item since the field does not exist
-            continue;
-        }
-        auto field_widget = field_item->widget();
-
+        auto field_widget = _form_layout->itemAt(row, QFormLayout::FieldRole)->widget();
         if(auto field_line_edit = dynamic_cast<QLineEdit*>(field_widget))
         {
             field_line_edit->setFixedWidth( field_colum_width );

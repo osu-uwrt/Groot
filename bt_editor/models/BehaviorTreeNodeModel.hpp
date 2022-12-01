@@ -4,7 +4,7 @@
 #include <QLabel>
 #include <QFile>
 #include <QLineEdit>
-#include <QGridLayout>
+#include <QFormLayout>
 #include <QEvent>
 #include <nodes/NodeDataModel>
 #include <iostream>
@@ -94,7 +94,7 @@ protected:
     std::map<QString, QWidget*> _ports_widgets;
     int16_t _uid;
 
-    QGridLayout* _form_layout;
+    QFormLayout* _form_layout;
     QVBoxLayout* _main_layout;
     QLabel* _caption_label;
     QFrame* _caption_logo_left;
