@@ -6,6 +6,7 @@
 #include <nodes/Node>
 #include <QTreeWidgetItem>
 #include <QShortcut>
+#include <QShowEvent>
 #include <QTimer>
 #include <deque>
 #include <thread>
@@ -90,6 +91,8 @@ public slots:
 
     void on_actionSave_triggered();
 
+    void onSubtreeSelected(const QString& subtreeName);
+
     void on_splitter_splitterMoved(int pos = 0, int index = 0);
 
     void on_toolButtonReorder_pressed();
@@ -141,6 +144,8 @@ private:
     void updateCurrentMode();
 
     bool eventFilter(QObject *obj, QEvent *event) override;
+
+    void showEvent(QShowEvent *event) override;
 
     void resizeEvent(QResizeEvent *) override;
 

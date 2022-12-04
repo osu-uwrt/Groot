@@ -1,5 +1,19 @@
 [![Build Status](https://travis-ci.org/BehaviorTree/Groot.svg?branch=master)](https://travis-ci.org/BehaviorTree/Groot)
 
+# DEPRECATION notice
+
+Groot is being rewritten from the ground up (**new software COMING SOON**). 
+This repository will be in "maintenance mode" and won't receive any significant update. 
+Issues will **not** be addressed by the main author but, occasionally, Pull Requests might be checked and merged.
+
+**Groot 1.0 is compatible only with BehaviorTree.CPP 3.8.x**, and it is not expected to 
+work correctly with BehaviorTree.CPP 4.x.
+
+We are working on Groot 2.0, that will introduce new functionalities and compatibility with BT.CPP 4.0.
+
+**If you use Groot at work** and you want to know how we are redesigning it to be more flexible, 
+reliable, fast and scalable, get in touch with the main author: dfaconti@aurynrobotics.com.
+
 # Groot 
 
 **Groot** is a Graphical Editor, written in C++ and Qt, to create [BehaviorTrees](https://en.wikipedia.org/wiki/Behavior_tree).
@@ -15,13 +29,6 @@ the graphic user interface are used to design and monitor a Behavior Tree.
 [![MOOD2Be](video_MOOD2Be.png)](https://vimeo.com/304651183)
 
 
-# Does your company use BehaviorTree.CPP and Groot?
-
-No company, institution or public/private funding is currently supporting the development of BehaviorTree.CPP and Groot. As a consequence, my time to support **BehaviorTree.CPP** is very limited and I decided that I won't spend any time at all supporting **Groot**.
-Pull Requests are welcome and will be reviewed, even if with some delay.
-
-If your company use this software, consider becoming a **sponsor** to support bug fixing and development of new features. You can find contact details in [package.xml](package.xml).
-
 # Dependencies, Installation, and Usage
 
 To compile the project you need:
@@ -34,27 +41,33 @@ On Ubuntu Xenial or later, you can install the dependencies with:
        sudo apt install qtbase5-dev libqt5svg5-dev libzmq3-dev libdw-dev
       
 Some functionalities of the code related to ROS will work __only__ if the
-project is compiled with with _catkin_.
+project is compiled with _catkin_.
 
-# Compilation instructions (Linux)
+## Compilation instructions (Linux)
 
-       git clone https://github.com/BehaviorTree/Groot.git
-       cd Groot
-       git submodule update --init --recursive
-       mkdir build; cd build
-       cmake ..
-       make
+```
+git clone https://github.com/BehaviorTree/Groot.git
+cd Groot
+git submodule update --init --recursive
+mkdir build; cd build
+cmake ..
+make
+```
        
  Note compiling "in-source" is not allowed.   
  
- # Compilation instructions (ROS)
+ ## Compilation instructions (ROS/ROS2)
 
-       mkdir -p catkin_ws/src
-       cd catkin_ws/src
-       git clone https://github.com/BehaviorTree/Groot.git
-       cd ..
-       rosdep install --from-paths src --ignore-src
-       catkin_make  
+**Discouraged**
+
+If you want to compile using `catkin build`(ROS) or `colcon_build` (ROS2)
+then you must be sure that version 3.8.x is used (branch V3.8).
+
+You may probably want to compile BehaviorTree.CPP in the same workspace.
+
+```
+git clone --branch v3.8 https://github.com/BehaviorTree/BehaviorTree.CPP.git
+```
 
 # Licence       
 

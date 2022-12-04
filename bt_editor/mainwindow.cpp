@@ -146,12 +146,15 @@ MainWindow::MainWindow(GraphicMode initial_mode, QWidget *parent) :
         this->createTab(ID);
     });
 
+    connect(_editor_widget, &SidepanelEditor::setTabScope,
+            this, &MainWindow::onSubtreeSelected);
+
     connect( _editor_widget, &SidepanelEditor::renameSubtree,
              this, [this](QString prev_ID, QString new_ID)
     {
         if (prev_ID == new_ID)
             return;
-            
+
         for (int index = 0; index < ui->tabWidget->count(); index++)
         {
             if( ui->tabWidget->tabText(index) == prev_ID)
@@ -647,7 +650,7 @@ void MainWindow::on_actionSave_triggered()
     QFile file(fileName);
     if (file.open(QIODevice::WriteOnly)) {
         QTextStream stream(&file);
-        stream << xml_text << endl;
+        stream << xml_text;
     }
 
     directory_path = QFileInfo(fileName).absolutePath();
@@ -720,6 +723,14 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
     {
         qDebug() << "B " << event->type();
         return QMainWindow::eventFilter(obj,event);
+    }
+}
+
+void MainWindow::showEvent(QShowEvent *event)
+{
+    if (!event->spontaneous()) {
+        currentTabInfo()->zoomHomeView();
+        ui->centralwidget->setFocus();
     }
 }
 
@@ -1045,6 +1056,12 @@ QtNodes::Node* MainWindow::subTreeExpand(GraphicContainer &container,
     if( option == SUBTREE_EXPAND && subtree_model->expanded() == false)
     {
         auto subtree_container = getTabByName(subtree_name);
+        if (!subtree_container) {
+            QMessageBox::warning(this, tr("Oops!"),
+                                 tr("Couldn't get SubTree name from tabs and therefore can't expand."),
+                                 QMessageBox::Cancel);
+            return &node;
+        }
 
         // Prevent expansion of invalid subtree
         if( !subtree_container->containsValidTree() )
@@ -1704,4 +1721,16 @@ void MainWindow::on_actionReportIssue_triggered()
 GraphicMode MainWindow::getGraphicMode(void) const
 {
     return _current_mode;
+}
+
+void MainWindow::onSubtreeSelected(const QString& subtreeName)
+{
+    for (int i = 0; i < ui->tabWidget->tabBar()->count(); ++i)
+    {
+        if (ui->tabWidget->tabBar()->tabText(i) == subtreeName)
+        {
+            ui->tabWidget->tabBar()->setCurrentIndex(i);
+            return;
+        }
+    }
 }
