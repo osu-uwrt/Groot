@@ -73,7 +73,8 @@ private:
     std::map<QString, QTreeWidgetItem*> _tree_view_category_items;
     bool askBeforeRemovingWorkNode;
 
-    bool tryRemoveFromWorkspace(QString name);
+    bool tryRemoveFromWorkspaceInteractively(QString name, bool renaming);
+    bool tryRemoveFromWorkspaceInteractively(QString name);
 
     NodeModels importFromXML(QFile *file);
 

@@ -184,7 +184,7 @@ void SidepanelEditor::on_buttonAddNode_clicked()
 void SidepanelEditor::onRemoveModel(QString selected_name)
 {
     //try removing from workspace if it is there
-    if(isInNodeModels(_workspace_models, selected_name) && !tryRemoveFromWorkspace(selected_name)) {
+    if(isInNodeModels(_workspace_models, selected_name) && !tryRemoveFromWorkspaceInteractively(selected_name)) {
         return; //return early if the user didnt want to remove the node from the workspace
     }
 
@@ -241,7 +241,6 @@ void SidepanelEditor::onContextMenu(const QPoint& pos)
                 if( dialog.exec() == QDialog::Accepted)
                 {
                     onReplaceModel( selected_name, dialog.getTreeNodeModel() );
-                    emit paletteEdited();
                 }
             } );
 
@@ -256,7 +255,7 @@ void SidepanelEditor::onContextMenu(const QPoint& pos)
         QAction *removeFromWorkspace = menu.addAction("Remove From Workspace");
 
         connect (removeFromWorkspace, &QAction::triggered, this, [this, selected_name]() {
-            bool removed = tryRemoveFromWorkspace(selected_name);
+            bool removed = tryRemoveFromWorkspaceInteractively(selected_name);
             if(removed) {
                 emit paletteEdited();
             }
@@ -281,12 +280,48 @@ void SidepanelEditor::onContextMenu(const QPoint& pos)
 void SidepanelEditor::onReplaceModel(const QString& old_name,
                                      const NodeModel &new_model)
 {
+    //is the user renaming a node to a name that is already in use?
+    bool overwriting_node = false;
+    if(_tree_nodes_model.count(new_model.registration_ID) > 0 && old_name != new_model.registration_ID) {
+        auto res = QMessageBox::question(this, "Overwrite existing node?",
+            tr("The model name %1 is already in use. Renaming a node to this name would overwrite the "
+            "existing node. Are you sure you want to rename the node?").arg(new_model.registration_ID),
+            QMessageBox::Yes | QMessageBox::No
+        );
+
+        if(res == QMessageBox::No) {
+            //user did not want to rename node
+            return;
+        }
+
+        overwriting_node = true;
+    }
+
+    //is the user renaming a workspace model?
+    if(_workspace_models.count(old_name) > 0 && old_name != new_model.registration_ID) {
+        if(!tryRemoveFromWorkspaceInteractively(old_name, true)) {
+            //user did not want to rename node
+            return;
+        }
+    }
+
+    //remove from pallete and workspace (must remove in case node is renamed)
+    _tree_nodes_model.erase(old_name);
+    
+    //add new model to workspace (again, in case the model was renamed this is important)
+    _workspace_models.insert( { new_model.registration_ID, new_model } );
+
     _model_registry->unregisterModel( old_name );
     emit addNewModel( new_model );
 
     if( new_model.type == NodeType::SUBTREE )
     {
-       emit renameSubtree(old_name, new_model.registration_ID);
+        emit renameSubtree(old_name, new_model.registration_ID);
+    }
+
+    if(overwriting_node) {
+        //causes existing nodes in the tree to update to the new port model
+        emit nodeModelEdited(new_model.registration_ID, new_model.registration_ID);
     }
 
     emit nodeModelEdited(old_name, new_model.registration_ID);
@@ -411,13 +446,15 @@ void SidepanelEditor::on_buttonDownload_clicked()
     emit paletteEdited();
 }
 
-bool SidepanelEditor::tryRemoveFromWorkspace(QString name) {
+bool SidepanelEditor::tryRemoveFromWorkspaceInteractively(QString name, bool renaming) {
     int res = QMessageBox::Yes;
 
     if(askBeforeRemovingWorkNode) {
+        QString verb = (renaming ? "rename" : "remove");
+
         QMessageBox msgbx;
-        msgbx.setWindowTitle(tr("Really remove workspaced node? (%1)").arg(name));
-        msgbx.setText("This node may be used by other trees in the workspace. If deleted, it would remain in their local workspaces, but will not be global. Are you sure you want to remove it from the workspace?");
+        msgbx.setWindowTitle(tr("Really %1 workspaced node? (%2)").arg(verb, name));
+        msgbx.setText(tr("This node may be used by other trees in the workspace. If %1'd, it would remain in their local workspaces, but will not be global. Are you sure you want to remove it from the workspace?").arg(verb));
         msgbx.setIcon(QMessageBox::Icon::Warning);
         msgbx.addButton(QMessageBox::Yes);
         msgbx.addButton(QMessageBox::No);
@@ -438,6 +475,10 @@ bool SidepanelEditor::tryRemoveFromWorkspace(QString name) {
     }
     
     return false;
+}
+
+bool SidepanelEditor::tryRemoveFromWorkspaceInteractively(QString name) {
+    return tryRemoveFromWorkspaceInteractively(name, false);
 }
 
 NodeModels SidepanelEditor::importFromXML(QFile* file)
