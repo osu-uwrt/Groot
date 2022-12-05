@@ -149,6 +149,14 @@ private:
 
     bool documentFromText(QString text, QDomDocument *out);
 
+    struct InvalidPortMapping {
+        QString sub_tree;
+        QString node_id;
+        QString port;
+    };
+
+    std::vector<InvalidPortMapping> checkRequiredPorts();
+
     void saveCurrentTree(bool forceSaveAs);
 
     void encodeSubtree(QString ID, QDomDocument *doc, QDomElement root, GraphicContainer *container) const;
@@ -231,8 +239,6 @@ private:
     MainWindow::SavedState saveCurrentState();
     void clearUndoStacks();
 };
-
-
 
 
 

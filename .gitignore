@@ -2,3 +2,4 @@
 /build*
 /test_data/*_test.xml
 /test/CMakeLists.txt.user
+.vscode
