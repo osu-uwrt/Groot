@@ -281,7 +281,6 @@ void SidepanelEditor::onContextMenu(const QPoint& pos)
 void SidepanelEditor::onReplaceModel(const QString& old_name,
                                      const NodeModel &new_model)
 {
-    _tree_nodes_model.erase( old_name );
     _model_registry->unregisterModel( old_name );
     emit addNewModel( new_model );
 

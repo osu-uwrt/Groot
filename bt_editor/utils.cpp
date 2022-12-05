@@ -580,14 +580,14 @@ std::set<QString> GetModelsToRemove(QWidget* parent,
 
 bool isInNodeModels(NodeModels models, QString id) {
     //is node model in the workspace?
-    bool inWorkspace = false;
+    bool inModels = false;
     for(const auto& n : models) {
         if(id == n.first) {
-            inWorkspace = true;
+            inModels = true;
             break;
         }
     }
-    return inWorkspace;
+    return inModels;
 }
 
 

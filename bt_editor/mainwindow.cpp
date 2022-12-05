@@ -205,6 +205,8 @@ MainWindow::MainWindow(GraphicMode initial_mode, QWidget *parent) :
     onTabSetMainTree(0);
     onSceneChanged();
     _current_state = saveCurrentState();
+
+    updateTreeInfo(true, "");
 }
 
 
@@ -279,7 +281,9 @@ MainWindow::~MainWindow()
 }
 
 
-void MainWindow::tryLoadWorkspace(const QString& workspace_text, bool overwriteOldWorkspace = true) {
+bool MainWindow::tryLoadWorkspace(const QString& workspace_text, bool& unsaved_changes) {
+    unsaved_changes = false;
+
     //load workspace. will default to document if the workspace is invalid
     QDomDocument workspaceDoc;
     bool docNotEmpty = true;
@@ -288,18 +292,60 @@ void MainWindow::tryLoadWorkspace(const QString& workspace_text, bool overwriteO
         qDebug() << "No workspace detected. Loading without a workspace." << endl;
     }
 
-    if(overwriteOldWorkspace) {
-        _workspace_models.clear();
-    }
+    //clear the old workspace to overwrite it
+    _workspace_models.clear();
+
+    std::vector<NodeModel> conflictingModels;
 
     if(docNotEmpty) {
         auto workspace_root = workspaceDoc.documentElement();
 
         //read tree nodes model
-        _workspace_models = ReadTreeNodesModel(workspace_root);
-        for(const auto& model: _workspace_models) {
+        auto new_workspace_models = ReadTreeNodesModel(workspace_root);
+        for(const auto& model: new_workspace_models) {
+            _workspace_models.insert(model);
             if(!isInNodeModels(_treenode_models, model.first)) {
                 onAddToModelRegistry(model.second);
+            } else {
+                //is in nodes model, check that ports are the same
+                auto tree_model = _treenode_models[model.first];
+                
+                bool ports_match = model.second.ports.size() == tree_model.ports.size();
+                for(auto port : model.second.ports) {
+                    if(tree_model.ports.count(port.first) == 0) {
+                        ports_match = false; //will break loop
+                    }
+                }
+
+                if(!ports_match) {
+                    conflictingModels.push_back(model.second);
+                }
+            }
+        }
+
+        //ask user what they want to do about models conflicting with the workspace
+        if(conflictingModels.size() > 0) {
+            QString modelsReadout = "";
+            for(int i = 0; i < conflictingModels.size(); i++) {
+                modelsReadout += tr("    %1\n").arg(conflictingModels[i].registration_ID);
+            }
+
+            int bail = QMessageBox::question(this, "Workspace conflict", 
+                tr("The following BT node models conflict with the workspace: \n\n%1\n"
+                    "The nodes in the tree will be modified.\n"
+                    "Continue with the current action?").arg(modelsReadout), 
+                QMessageBox::No | QMessageBox::Yes);
+
+            //user does not want to continue with the current action
+            if(bail == QMessageBox::No) {
+                return false;
+            }
+
+            //add conflicting workspace models to the palette models
+            for(int i = 0; i < conflictingModels.size(); i++) {
+                onAddToModelRegistry(conflictingModels[i]);
+                onTreeNodeEdited(conflictingModels[i].registration_ID, conflictingModels[i].registration_ID);
+                unsaved_changes = true;
             }
         }
 
@@ -319,11 +365,15 @@ void MainWindow::tryLoadWorkspace(const QString& workspace_text, bool overwriteO
 
         _editor_widget->updateTreeView();
     }
+
+    return true;
 }
 
 
-bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_text)
+bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_text, bool& has_unsaved_changes)
 {
+    has_unsaved_changes = false;
+
     //create a representation of the document being loaded
     QDomDocument docToLoad;
     if(!documentFromText(xml_text, &docToLoad)) {
@@ -350,7 +400,7 @@ bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_t
         for( const auto& model: custom_models)
         {
             NodeModel node = model.second;
-            onAddToModelRegistry( node );
+            onAddToModelRegistry(node);
         }
 
         _editor_widget->updateTreeView();
@@ -400,7 +450,11 @@ bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_t
             currentTabInfo()->nodeReorder();
         }
 
-        tryLoadWorkspace(workspace_text);
+        //load workspace here
+        bool workspaceLoaded = tryLoadWorkspace(workspace_text, has_unsaved_changes);
+        if(!workspaceLoaded) {
+            onClearRequested(true);
+        }
 
         auto models_to_remove = GetModelsToRemove(this, _treenode_models, _workspace_models, custom_models);
 
@@ -432,8 +486,16 @@ bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_t
 }
 
 
+bool MainWindow::loadFromXML(const QString &xml_text) {
+    bool unsaved;
+    return loadFromXML(xml_text, "", unsaved);
+}
+
+
 void MainWindow::on_actionLoad_triggered()
 {
+    ensureTreeSaved();
+
     QSettings settings;
     QString directory_path  = settings.value("MainWindow.lastLoadDirectory",
                                             QDir::homePath() ).toString();
@@ -447,20 +509,23 @@ void MainWindow::on_actionLoad_triggered()
     if(xml_text.isEmpty()) { //either nothing in file or something went wrong
         return;
     }
-    
+
     directory_path = QFileInfo(fileName).absolutePath();
     settings.setValue("MainWindow.lastLoadDirectory", directory_path);
     settings.sync();
+
 
     //load workspace text from file if a workspace is present
     QString 
         work_path = workspace_path(directory_path),
         workspace_text = readFileToString(work_path);
 
-    bool success = loadFromXML(xml_text, workspace_text);
+    bool unsaved_changes = false; //tree has unsaved changes? (may happen in situations of workspace merging)
+    bool success = loadFromXML(xml_text, workspace_text, unsaved_changes);
+
     if(success) {
         _current_file_name = fileName;
-        updateTreeInfo(true, fileName);
+        updateTreeInfo(!unsaved_changes, fileName);
     }
 }
 
@@ -499,7 +564,7 @@ QString MainWindow::saveDocToXML() const
 
         QDomElement node = doc.createElement( QString::fromStdString(toStr(model.type)) );
 
-        encodeNodeModel(model, ID, doc, &node);
+        encodeNodeModel(model, ID, doc, node);
         root_models.appendChild(node);
     }
     root.appendChild(root_models);
@@ -532,7 +597,7 @@ QString MainWindow::saveWorkspaceToXML() const {
         } 
 
         QDomElement node = doc.createElement(QString::fromStdString(toStr(model.type)));
-        encodeNodeModel(model, ID, doc, &node);
+        encodeNodeModel(model, ID, doc, node);
         models.appendChild(node);
     }
 
@@ -895,6 +960,11 @@ void MainWindow::onRequestSubTreeExpand(GraphicContainer& container,
 }
 
 
+/**
+ * @brief Registers/updates a node model, and updates the workspace version if and only if it is in the workspace.
+ * 
+ * @param model The model to register
+ */
 void MainWindow::onAddToModelRegistry(const NodeModel &model)
 {
     namespace util = QtNodes::detail;
@@ -911,7 +981,19 @@ void MainWindow::onAddToModelRegistry(const NodeModel &model)
 
     _model_registry->registerModel( QString::fromStdString( toStr(model.type)), node_creator, ID);
 
+    //erase treenode model if it exists
+    if(_treenode_models.count(ID) > 0) {
+        _treenode_models.erase(ID);
+    }
+
     _treenode_models.insert( {ID, model } );
+
+    //replace workspace model if the node is workspaced
+    if(_workspace_models.count(ID) > 0) {
+        _workspace_models.erase(ID);
+        _workspace_models.insert( {ID, model} );
+    }
+
     _editor_widget->updateTreeView();
 }
 
@@ -1409,7 +1491,17 @@ void MainWindow::saveCurrentTree(bool forceSaveAs) {
         //if saving as, overwrite current workspace with new one, then prompt user
         NodeModels old_workspace(_workspace_models);
         if(QDir(work_dir).exists()) {
-            tryLoadWorkspace(readFileToString(workspace_path(directory_path)));
+            bool unsaved_changes = false;
+            bool workspaceLoaded = tryLoadWorkspace(readFileToString(workspace_path(directory_path)), unsaved_changes);
+            if(!workspaceLoaded) {
+                return; //user already warned about workspace loading issue, so not necessarily a silent fail
+            }
+
+            if(unsaved_changes) {
+                QMessageBox::warning(this, "New changes to tree", 
+                    "Loading the workspace caused new changes to the tree. Tree must be re-saved."
+                );
+            }
         }
 
         //figure out which nodes are not already in new workspace
@@ -1507,10 +1599,10 @@ void MainWindow::encodeSubtree(QString ID, QDomDocument *doc, QDomElement root) 
     encodeSubtree(ID, doc, root, container);
 }
 
-void MainWindow::encodeNodeModel(NodeModel model, QString id, QDomDocument doc, QDomElement *node) const {
-    if( !node->isNull() )
+void MainWindow::encodeNodeModel(NodeModel model, QString id, QDomDocument doc, QDomElement &node) const {    
+    if( !node.isNull() )
     {
-        node->setAttribute("ID", id);
+        node.setAttribute("ID", id);
 
         for(const auto& port_it: model.ports)
         {
@@ -1518,7 +1610,7 @@ void MainWindow::encodeNodeModel(NodeModel model, QString id, QDomDocument doc, 
             const auto& port = port_it.second;
 
             QDomElement port_element = writePortModel(port_name, port, doc);
-            node->appendChild( port_element );
+            node.appendChild( port_element );
         }
     }
 }

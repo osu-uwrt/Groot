@@ -51,6 +51,7 @@ main(int argc, char *argv[])
         MainWindow win( GraphicMode::EDITOR );
         win.setWindowTitle("Groot");
         win.show();
+
         win.loadFromXML( ":/crossdoor_with_subtree.xml" );
         return app.exec();
     }

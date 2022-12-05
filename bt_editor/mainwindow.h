@@ -46,7 +46,9 @@ public:
     explicit MainWindow(GraphicMode initial_mode, QWidget *parent = nullptr);
     ~MainWindow() override;
 
-    bool loadFromXML(const QString &xml_text, const QString &workspace_text = "");
+    bool loadFromXML(const QString &xml_text, const QString &workspace_text, bool& has_unsaved_changes);
+
+    bool loadFromXML(const QString &xml_text);
 
     QString saveDocToXML() const ;
 
@@ -145,7 +147,7 @@ public:
 
 private:
 
-    void tryLoadWorkspace(const QString& workspace_text, bool overwriteOldWorkspace);
+    bool tryLoadWorkspace(const QString& workspace_text, bool& unsaved_changes);
 
     bool documentFromText(QString text, QDomDocument *out);
 
@@ -163,7 +165,7 @@ private:
     
     void encodeSubtree(QString ID, QDomDocument *doc, QDomElement root) const;
 
-    void encodeNodeModel(NodeModel model, QString id, QDomDocument doc, QDomElement *node) const;
+    void encodeNodeModel(NodeModel model, QString id, QDomDocument doc, QDomElement &node) const;
 
     void updateTreeInfo(bool saved, QString file);
     
