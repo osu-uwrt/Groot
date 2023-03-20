@@ -1273,18 +1273,18 @@ bool MainWindow::documentFromText(QString text, QDomDocument *out) {
         {
             registered_ID.push_back( it.first );
         }
-        std::vector<QString> error_messages;
-        bool done = VerifyXML(document, registered_ID, error_messages );
+        // std::vector<QString> error_messages;
+        // bool done = VerifyXML(document, registered_ID, error_messages );
 
-        if( !done )
-        {
-            QString merged_error;
-            for (const auto& err: error_messages)
-            {
-                merged_error += err + "\n";
-            }
-            throw std::runtime_error( merged_error.toStdString() );
-        }
+        // if( !done )
+        // {
+        //     QString merged_error;
+        //     for (const auto& err: error_messages)
+        //     {
+        //         merged_error += err + "\n";
+        //     }
+        //     throw std::runtime_error( merged_error.toStdString() );
+        // }
     }
     catch( std::runtime_error& err)
     {

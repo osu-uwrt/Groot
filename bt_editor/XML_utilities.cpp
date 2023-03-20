@@ -188,27 +188,27 @@ void RecursivelyCreateXml(const FlowScene &scene, QDomDocument &doc, QDomElement
     }
 }
 
-bool VerifyXML(QDomDocument &doc,
-               const std::vector<QString>& registered_ID,
-               std::vector<QString>& error_messages)
-{
-    error_messages.clear();
-    try {
-        std::string xml_text = doc.toString().toStdString();
-        std::set<std::string> registered_nodes;
+// bool VerifyXML(QDomDocument &doc,
+//                const std::vector<QString>& registered_ID,
+//                std::vector<QString>& error_messages)
+// {
+//     error_messages.clear();
+//     try {
+//         std::string xml_text = doc.toString().toStdString();
+//         std::set<std::string> registered_nodes;
 
-        for(const auto& str: registered_ID)
-        {
-            registered_nodes.insert( str.toStdString() );
-        }
+//         for(const auto& str: registered_ID)
+//         {
+//             registered_nodes.insert( str.toStdString() );
+//         }
 
-        BT::VerifyXML(xml_text, registered_nodes); // may throw
-    } catch (std::exception& ex)
-    {
-        error_messages.push_back(ex.what());
-    }
-    return true;
-}
+//         BT::VerifyXML(xml_text, registered_nodes); // may throw
+//     } catch (std::exception& ex)
+//     {
+//         error_messages.push_back(ex.what());
+//     }
+//     return true;
+// }
 
 
 
