@@ -6,6 +6,7 @@
 #include <QRegExpValidator>
 #include <QSettings>
 #include <QModelIndexList>
+#include <QCheckBox>
 
 CustomNodeDialog::CustomNodeDialog(const NodeModels &models,
                                    QString to_edit,
@@ -59,6 +60,12 @@ CustomNodeDialog::CustomNodeDialog(const NodeModels &models,
                 ui->tableWidget->setCellWidget(row,1, combo_direction );
                 ui->tableWidget->setItem(row,2, new QTableWidgetItem(port_it.second.default_value) );
                 ui->tableWidget->setItem(row,3, new QTableWidgetItem(port_it.second.description) );
+                
+                QCheckBox* require_box = new QCheckBox;
+                if (port_it.second.required) {
+                    require_box->setCheckState(Qt::Checked);
+                }
+                ui->tableWidget->setCellWidget(row, 4, require_box);
             }
 
             if( model.type == NodeType::ACTION )
@@ -127,6 +134,9 @@ NodeModel CustomNodeDialog::getTreeNodeModel() const
         port_model.direction = BT::convertFromString<PortDirection>(direction.toStdString());
         port_model.default_value =  ui->tableWidget->item(row,2)->text();
         port_model.description   =  ui->tableWidget->item(row,3)->text();
+        
+        QCheckBox* required_box = static_cast<QCheckBox*>(ui->tableWidget->cellWidget(row, 4));
+        port_model.required = required_box->checkState() == Qt::Checked;
         ports.insert( {key, port_model} );
     }
     return { type, ID, ports };
@@ -247,6 +257,9 @@ void CustomNodeDialog::on_pushButtonAdd_pressed()
     ui->tableWidget->setCellWidget(row, 1, combo_direction);
     ui->tableWidget->setItem(row,2, new QTableWidgetItem());
     ui->tableWidget->setItem(row,3, new QTableWidgetItem());
+
+    QCheckBox* require_box = new QCheckBox;
+    ui->tableWidget->setCellWidget(row, 4, require_box);
 
     checkValid();
 }

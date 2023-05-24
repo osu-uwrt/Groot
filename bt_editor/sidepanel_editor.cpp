@@ -16,10 +16,12 @@
 
 SidepanelEditor::SidepanelEditor(QtNodes::DataModelRegistry *registry,
                                  NodeModels &tree_nodes_model,
+                                 NodeModels &workspace_models,
                                  QWidget *parent) :
     QFrame(parent),
     ui(new Ui::SidepanelEditor),
     _tree_nodes_model(tree_nodes_model),
+    _workspace_models(workspace_models),
     _model_registry(registry)
 {
     ui->setupUi(this);   
@@ -36,6 +38,8 @@ SidepanelEditor::SidepanelEditor(QtNodes::DataModelRegistry *registry,
     table_header->setSectionResizeMode(2, QHeaderView::Stretch);
 
     ui->buttonLock->setChecked(false);
+
+    askBeforeRemovingWorkNode = true;
 
     QSettings settings;
     table_header->restoreState( settings.value("SidepanelEditor/header").toByteArray() );
@@ -82,6 +86,7 @@ void SidepanelEditor::updateTreeView()
       auto item = new QTreeWidgetItem(parent, {ID});
       const bool is_builtin = BuiltinNodeModels().count( ID ) > 0;
       const bool is_editable = (!ui->buttonLock->isChecked() && !is_builtin);
+      const bool not_in_workspace = !isInNodeModels(_workspace_models, it.first) && !isInNodeModels(BuiltinNodeModels(), it.first);
 
       QFont font = item->font(0);
       font.setItalic( is_builtin );
@@ -89,10 +94,22 @@ void SidepanelEditor::updateTreeView()
       item->setFont(0, font);
       item->setData(0, Qt::UserRole, ID);
 
+      //color blue-ish if node is editable (and in workspace)
+      QString editable_tip = (is_editable ? "editable" : "not editable");
       if (is_editable)
       {
         item->setForeground(0, QBrush(QColor(70, 110, 154)));
       }
+      
+      //color red-ish if node is custom and not in workspace
+      QString workspace_tip = (is_builtin ? "built-in" : (not_in_workspace ? "not in workspace" : "in workspace"));
+      if(not_in_workspace) {
+        item->setForeground(0, QBrush(QColor(154, 70, 70)));
+      }
+
+      //assemble tooltip string
+      QString tooltip = tr("%1: %2, %3").arg(ID, workspace_tip, editable_tip);
+      item->setToolTip(0, tooltip);
     }
 
     ui->paletteTreeWidget->expandAll();
@@ -161,10 +178,17 @@ void SidepanelEditor::on_buttonAddNode_clicked()
         emit addNewModel( new_model );
     }
     updateTreeView();
+    emit paletteEdited();
 }
 
 void SidepanelEditor::onRemoveModel(QString selected_name)
 {
+    //try removing from workspace if it is there
+    if(isInNodeModels(_workspace_models, selected_name) && !tryRemoveFromWorkspace(selected_name)) {
+        return; //return early if the user didnt want to remove the node from the workspace
+    }
+
+    //remove node
     NodeType node_type = _tree_nodes_model.at(selected_name).type;
 
     _tree_nodes_model.erase( selected_name );
@@ -174,6 +198,8 @@ void SidepanelEditor::onRemoveModel(QString selected_name)
     {
         emit destroySubtree(selected_name);
     }
+
+    emit paletteEdited();
 }
 
 
@@ -203,6 +229,9 @@ void SidepanelEditor::onContextMenu(const QPoint& pos)
         }
     }
 
+    //find if the model is in the workspace or not
+    const bool in_workspace = isInNodeModels(_workspace_models, selected_name);
+
     QMenu menu(this);
 
     QAction* edit   = menu.addAction("Edit");
@@ -212,6 +241,7 @@ void SidepanelEditor::onContextMenu(const QPoint& pos)
                 if( dialog.exec() == QDialog::Accepted)
                 {
                     onReplaceModel( selected_name, dialog.getTreeNodeModel() );
+                    emit paletteEdited();
                 }
             } );
 
@@ -219,8 +249,28 @@ void SidepanelEditor::onContextMenu(const QPoint& pos)
 
     connect( remove, &QAction::triggered, this,[this, selected_name]()
     {
-        emit modelRemoveRequested(selected_name);
+        emit modelRemoveRequested(selected_name); //will emit paletteEdited if remove actually happens
     } );
+
+    if(in_workspace) {
+        QAction *removeFromWorkspace = menu.addAction("Remove From Workspace");
+
+        connect (removeFromWorkspace, &QAction::triggered, this, [this, selected_name]() {
+            bool removed = tryRemoveFromWorkspace(selected_name);
+            if(removed) {
+                emit paletteEdited();
+            }
+        } );
+    } else {
+        QAction *addToWorkspace = menu.addAction("Add To Workspace");
+        
+        connect( addToWorkspace, &QAction::triggered, this, [this, selected_name]()
+        {
+            _workspace_models.insert( {selected_name, getModelByName(_tree_nodes_model, selected_name)} );
+            updateTreeView();
+            emit paletteEdited();
+        } );
+    }
 
     QPoint globalPos = ui->paletteTreeWidget->mapToGlobal(pos);
     menu.exec(globalPos);
@@ -241,6 +291,7 @@ void SidepanelEditor::onReplaceModel(const QString& old_name,
     }
 
     emit nodeModelEdited(old_name, new_model.registration_ID);
+    emit paletteEdited();
 }
 
 
@@ -346,7 +397,7 @@ void SidepanelEditor::on_buttonDownload_clicked()
         return;
     }
 
-    auto models_to_remove = GetModelsToRemove(this, _tree_nodes_model, imported_models );
+    auto models_to_remove = GetModelsToRemove(this, _tree_nodes_model, _workspace_models, imported_models );
 
     for(QString model_name: models_to_remove)
     {
@@ -357,6 +408,37 @@ void SidepanelEditor::on_buttonDownload_clicked()
     {
         emit addNewModel( it.second );
     }
+
+    emit paletteEdited();
+}
+
+bool SidepanelEditor::tryRemoveFromWorkspace(QString name) {
+    int res = QMessageBox::Yes;
+
+    if(askBeforeRemovingWorkNode) {
+        QMessageBox msgbx;
+        msgbx.setWindowTitle(tr("Really remove workspaced node? (%1)").arg(name));
+        msgbx.setText("This node may be used by other trees in the workspace. If deleted, it would remain in their local workspaces, but will not be global. Are you sure you want to remove it from the workspace?");
+        msgbx.setIcon(QMessageBox::Icon::Warning);
+        msgbx.addButton(QMessageBox::Yes);
+        msgbx.addButton(QMessageBox::No);
+        
+        QCheckBox checkbox("Don't show again");
+        checkbox.setCheckState(Qt::CheckState::Unchecked);
+        
+        msgbx.setCheckBox(&checkbox);
+
+        res = msgbx.exec();
+        askBeforeRemovingWorkNode = checkbox.checkState() == Qt::CheckState::Unchecked;
+    }
+
+    if(res == QMessageBox::Yes) {
+        _workspace_models.erase(name);
+        updateTreeView();
+        return true;
+    }
+    
+    return false;
 }
 
 NodeModels SidepanelEditor::importFromXML(QFile* file)

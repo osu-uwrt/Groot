@@ -34,6 +34,9 @@
 
 #include "ui_about_dialog.h"
 
+#define workspace_dir(directory_path) tr("%1/.groot").arg(directory_path)
+#define workspace_path(directory_path) tr("%1/workspace.xml").arg(workspace_dir(directory_path))
+
 using QtNodes::DataModelRegistry;
 using QtNodes::FlowView;
 using QtNodes::FlowScene;
@@ -89,7 +92,7 @@ MainWindow::MainWindow(GraphicMode initial_mode, QWidget *parent) :
     }
     //------------------------------------------------------
 
-    _editor_widget = new SidepanelEditor(_model_registry.get(), _treenode_models, this);
+    _editor_widget = new SidepanelEditor(_model_registry.get(), _treenode_models, _workspace_models, this);
     _replay_widget = new SidepanelReplay(this);
 
     ui->leftFrame->layout()->addWidget( _editor_widget );
@@ -125,8 +128,6 @@ MainWindow::MainWindow(GraphicMode initial_mode, QWidget *parent) :
 
     QShortcut* redo_shortcut = new QShortcut(QKeySequence(Qt::CTRL + Qt::SHIFT + Qt::Key_Z), this);
     connect( redo_shortcut, &QShortcut::activated, this, &MainWindow::onRedoInvoked );
-
-    QShortcut* save_shortcut = new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_S), this);
 
     connect( _editor_widget, &SidepanelEditor::nodeModelEdited,
             this, &MainWindow::onTreeNodeEdited);
@@ -178,7 +179,8 @@ MainWindow::MainWindow(GraphicMode initial_mode, QWidget *parent) :
     connect( ui->toolButtonSaveFile, &QToolButton::clicked,
             this, &MainWindow::on_actionSave_triggered );
 
-    connect( save_shortcut, &QShortcut::activated, this, &MainWindow::on_actionSave_triggered );
+    connect( ui->toolButtonSaveFileAs, &QToolButton::clicked,
+             this, &MainWindow::on_actionSaveAs_triggered );
 
     connect( _replay_widget, &SidepanelReplay::changeNodeStyle,
             this, &MainWindow::onChangeNodesStatus);
@@ -223,6 +225,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
 
     settings.setValue("StartupDialog.Mode", toStr( _current_mode ) );
 
+    ensureTreeSaved();
+
     QMainWindow::closeEvent(event);
 }
 
@@ -251,6 +255,9 @@ GraphicContainer* MainWindow::createTab(const QString &name)
     connect( ti, &GraphicContainer::undoableChange,
             this, &MainWindow::onSceneChanged );
 
+    connect( _editor_widget, &SidepanelEditor::paletteEdited, 
+            this, &MainWindow::onSidePaletteChanged);
+
     connect( ti, &GraphicContainer::requestSubTreeExpand,
             this, &MainWindow::onRequestSubTreeExpand );
 
@@ -271,41 +278,56 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-void MainWindow::loadFromXML(const QString& xml_text)
-{
-    QDomDocument document;
-    try{
-        QString errorMsg;
-        int errorLine;
-        if( ! document.setContent(xml_text, &errorMsg, &errorLine ) )
-        {
-            throw std::runtime_error( tr("Error parsing XML (line %1): %2").arg(errorLine).arg(errorMsg).toStdString() );
-        }
-        //---------------
-        std::vector<QString> registered_ID;
-        for (const auto& it: _treenode_models)
-        {
-            registered_ID.push_back( it.first );
-        }
-        std::vector<QString> error_messages;
-        bool done = VerifyXML(document, registered_ID, error_messages );
 
-        if( !done )
-        {
-            QString merged_error;
-            for (const auto& err: error_messages)
-            {
-                merged_error += err + "\n";
-            }
-            throw std::runtime_error( merged_error.toStdString() );
-        }
+void MainWindow::tryLoadWorkspace(const QString& workspace_text, bool overwriteOldWorkspace = true) {
+    //load workspace. will default to document if the workspace is invalid
+    QDomDocument workspaceDoc;
+    bool docNotEmpty = true;
+    if(!documentFromText(workspace_text, &workspaceDoc)) {
+        docNotEmpty = false;
+        qDebug() << "No workspace detected. Loading without a workspace." << endl;
     }
-    catch( std::runtime_error& err)
-    {
-        QMessageBox messageBox;
-        messageBox.critical(this,"Error parsing the XML", err.what() );
-        messageBox.show();
-        return;
+
+    if(overwriteOldWorkspace) {
+        _workspace_models.clear();
+    }
+
+    if(docNotEmpty) {
+        auto workspace_root = workspaceDoc.documentElement();
+
+        //read tree nodes model
+        _workspace_models = ReadTreeNodesModel(workspace_root);
+        for(const auto& model: _workspace_models) {
+            if(!isInNodeModels(_treenode_models, model.first)) {
+                onAddToModelRegistry(model.second);
+            }
+        }
+
+        //read subtree definitions
+        for (auto bt_root = workspace_root.firstChildElement("BehaviorTree");
+             !bt_root.isNull();
+             bt_root = bt_root.nextSiblingElement("BehaviorTree"))
+        {
+            auto tree = BuildTreeFromXML( bt_root, _treenode_models );
+
+            if( bt_root.hasAttribute("ID") )
+            {
+                QString tree_name = bt_root.attribute("ID");
+                onCreateAbsBehaviorTree(tree, tree_name);
+            }
+        }
+
+        _editor_widget->updateTreeView();
+    }
+}
+
+
+bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_text)
+{
+    //create a representation of the document being loaded
+    QDomDocument docToLoad;
+    if(!documentFromText(xml_text, &docToLoad)) {
+        return false;
     }
 
     //---------------
@@ -314,8 +336,9 @@ void MainWindow::loadFromXML(const QString& xml_text)
     auto saved_state = _current_state;
     auto prev_tree_model = _treenode_models;
 
+    //load desired tree
     try {
-        auto document_root = document.documentElement();
+        auto document_root = docToLoad.documentElement();
 
         if( document_root.hasAttribute("main_tree_to_execute"))
         {
@@ -326,12 +349,13 @@ void MainWindow::loadFromXML(const QString& xml_text)
 
         for( const auto& model: custom_models)
         {
-            onAddToModelRegistry( model.second );
+            NodeModel node = model.second;
+            onAddToModelRegistry( node );
         }
 
         _editor_widget->updateTreeView();
 
-        onActionClearTriggered(false);
+        onClearRequested(false);
 
         const QSignalBlocker blocker( currentTabInfo() );
 
@@ -375,7 +399,10 @@ void MainWindow::loadFromXML(const QString& xml_text)
         else{
             currentTabInfo()->nodeReorder();
         }
-        auto models_to_remove = GetModelsToRemove(this, _treenode_models, custom_models);
+
+        tryLoadWorkspace(workspace_text);
+
+        auto models_to_remove = GetModelsToRemove(this, _treenode_models, _workspace_models, custom_models);
 
         for( QString model_name: models_to_remove )
         {
@@ -395,11 +422,13 @@ void MainWindow::loadFromXML(const QString& xml_text)
         QMessageBox::warning(this, tr("Exception!"),
                              tr("It was not possible to parse the file. Error:\n\n%1"). arg( err_message ),
                              QMessageBox::Ok);
+        
+        return false;
     }
-    else{
-        onSceneChanged();
-        onPushUndo();
-    }
+    
+    onSceneChanged();
+    onPushUndo();
+    return true;
 }
 
 
@@ -412,31 +441,30 @@ void MainWindow::on_actionLoad_triggered()
     QString fileName = QFileDialog::getOpenFileName(this,
                                                     tr("Load BehaviorTree from file"), directory_path,
                                                     tr("BehaviorTree files (*.xml)"));
-    if (!QFileInfo::exists(fileName)){
+    
+    
+    QString xml_text = readFileToString(fileName);
+    if(xml_text.isEmpty()) { //either nothing in file or something went wrong
         return;
     }
-
-    QFile file(fileName);
-
-    if (!file.open(QIODevice::ReadOnly)){
-        return;
-    }
-
+    
     directory_path = QFileInfo(fileName).absolutePath();
     settings.setValue("MainWindow.lastLoadDirectory", directory_path);
     settings.sync();
 
-    QString xml_text;
+    //load workspace text from file if a workspace is present
+    QString 
+        work_path = workspace_path(directory_path),
+        workspace_text = readFileToString(work_path);
 
-    QTextStream in(&file);
-    while (!in.atEnd()) {
-        xml_text += in.readLine();
+    bool success = loadFromXML(xml_text, workspace_text);
+    if(success) {
+        _current_file_name = fileName;
+        updateTreeInfo(true, fileName);
     }
-
-    loadFromXML(xml_text);
 }
 
-QString MainWindow::saveToXML() const
+QString MainWindow::saveDocToXML() const
 {
     QDomDocument doc;
 
@@ -450,29 +478,10 @@ QString MainWindow::saveToXML() const
         root.setAttribute("main_tree_to_execute", _main_tree.toStdString().c_str());
     }
 
+    //encode subtrees
     for (auto& it: _tab_info)
     {
-        auto& container = it.second;
-        auto  scene = container->scene();
-
-        auto abs_tree = BuildTreeFromScene(container->scene());
-        auto abs_root = abs_tree.rootNode();
-        if( abs_root->children_index.size() == 1 &&
-            abs_root->model.registration_ID == "Root"  )
-        {
-            // mofe to the child of ROOT
-            abs_root = abs_tree.node( abs_root->children_index.front() );
-        }
-
-        QtNodes::Node* root_node = abs_root->graphic_node;
-
-        root.appendChild( doc.createComment(COMMENT_SEPARATOR) );
-        QDomElement root_element = doc.createElement("BehaviorTree");
-
-        root_element.setAttribute("ID", it.first.toStdString().c_str());
-        root.appendChild(root_element);
-
-        RecursivelyCreateXml(*scene, doc, root_element, root_node );
+        encodeSubtree((QString) it.first, &doc, root, (GraphicContainer*) it.second);
     }
     root.appendChild( doc.createComment(COMMENT_SEPARATOR) );
 
@@ -490,19 +499,7 @@ QString MainWindow::saveToXML() const
 
         QDomElement node = doc.createElement( QString::fromStdString(toStr(model.type)) );
 
-        if( !node.isNull() )
-        {
-            node.setAttribute("ID", ID);
-
-            for(const auto& port_it: model.ports)
-            {
-                const auto& port_name = port_it.first;
-                const auto& port = port_it.second;
-
-                QDomElement port_element = writePortModel(port_name, port, doc);
-                node.appendChild( port_element );
-            }
-        }
+        encodeNodeModel(model, ID, doc, &node);
         root_models.appendChild(node);
     }
     root.appendChild(root_models);
@@ -510,6 +507,41 @@ QString MainWindow::saveToXML() const
 
     return xmlDocumentToString(doc);
 }
+
+
+QString MainWindow::saveWorkspaceToXML() const {
+    QDomDocument doc;
+    
+    const char *COMMENT_SEPARATOR = " ////////// ";
+
+    QDomElement root = doc.createElement("root");
+    doc.appendChild(root);
+
+    QDomElement models = doc.createElement("TreeNodesModel");
+    for(const auto& it : _workspace_models) {
+        QString ID = it.first;
+        NodeModel model = it.second;
+
+        if( BuiltinNodeModels().count(ID) != 0 )
+        {
+            continue;
+        }
+
+        if(model.type == NodeType::SUBTREE) {
+            encodeSubtree(ID, &doc, root);
+        } 
+
+        QDomElement node = doc.createElement(QString::fromStdString(toStr(model.type)));
+        encodeNodeModel(model, ID, doc, &node);
+        models.appendChild(node);
+    }
+
+    root.appendChild(models);
+    root.appendChild(doc.createComment(COMMENT_SEPARATOR));
+
+    return xmlDocumentToString(doc);
+}
+
 
 QString MainWindow::xmlDocumentToString(const QDomDocument &document) const
 {
@@ -611,47 +643,12 @@ void MainWindow::recursivelySaveNodeCanonically(QXmlStreamWriter &stream, const 
 
 void MainWindow::on_actionSave_triggered()
 {
-    for (auto& it: _tab_info)
-    {
-        auto& container = it.second;
-        if( !container->containsValidTree() )
-        {
-            QMessageBox::warning(this, tr("Oops!"),
-                                 tr("Malformed behavior tree. File can not be saved"),
-                                 QMessageBox::Cancel);
-            return;
-        }
-    }
+    saveCurrentTree(false);
+}
 
-    if( _tab_info.size() == 1 )
-    {
-        _main_tree = _tab_info.begin()->first;
-    }
-
-    QSettings settings;
-    QString directory_path  = settings.value("MainWindow.lastSaveDirectory",
-                                            QDir::currentPath() ).toString();
-
-    auto fileName = QFileDialog::getSaveFileName(this, "Save BehaviorTree to file",
-                                                 directory_path, "BehaviorTree files (*.xml)");
-    if (fileName.isEmpty()){
-        return;
-    }
-    if (!fileName.endsWith(".xml"))
-    {
-        fileName += ".xml";
-    }
-
-    QString xml_text = saveToXML();
-
-    QFile file(fileName);
-    if (file.open(QIODevice::WriteOnly)) {
-        QTextStream stream(&file);
-        stream << xml_text << endl;
-    }
-
-    directory_path = QFileInfo(fileName).absolutePath();
-    settings.setValue("MainWindow.lastSaveDirectory", directory_path);
+void MainWindow::on_actionSaveAs_triggered() 
+{
+    saveCurrentTree(true);
 }
 
 void MainWindow::onAutoArrange()
@@ -666,6 +663,8 @@ void MainWindow::onSceneChanged()
     ui->toolButtonLayout->setEnabled(valid_BT);
     ui->toolButtonReorder->setEnabled(valid_BT);
     ui->toolButtonReorder->setEnabled(valid_BT);
+
+    updateTreeInfo(false, _current_file_name);
 
     ui->actionSave->setEnabled(valid_BT);
     QPixmap pix;
@@ -683,6 +682,11 @@ void MainWindow::onSceneChanged()
     ui->labelSemaphore->setScaledContents(true);
 
     lockEditing( _current_mode != GraphicMode::EDITOR );
+}
+
+
+void MainWindow::onSidePaletteChanged() {
+    updateTreeInfo(false, _current_file_name);
 }
 
 
@@ -1155,7 +1159,7 @@ void MainWindow::onCreateAbsBehaviorTree(const AbsBehaviorTree &tree,
     container->loadSceneFromTree( tree );
     container->nodeReorder();
 
-    if( secondary_tabs ){
+    if( secondary_tabs ) {
       for(const auto& node: tree.nodes())
       {
         if( node.model.type == NodeType::SUBTREE && getTabByName(node.model.registration_ID) == nullptr)
@@ -1168,11 +1172,12 @@ void MainWindow::onCreateAbsBehaviorTree(const AbsBehaviorTree &tree,
     clearUndoStacks();
 }
 
-void MainWindow::on_actionClear_triggered()
+void MainWindow::on_actionNew_triggered()
 {
-    onActionClearTriggered(true);
+    onClearRequested(true);
     clearTreeModels();
     clearUndoStacks();
+    updateTreeInfo(false, "");
 }
 
 void MainWindow::onTreeNodeEdited(QString prev_ID, QString new_ID)
@@ -1225,7 +1230,7 @@ void MainWindow::onTreeNodeEdited(QString prev_ID, QString new_ID)
 }
 
 
-void MainWindow::onActionClearTriggered(bool create_new)
+void MainWindow::onClearRequested(bool create_new)
 {
     for (auto& it: _tab_info)
     {
@@ -1246,6 +1251,304 @@ void MainWindow::onActionClearTriggered(bool create_new)
     _monitor_widget->clear();
 #endif
 
+}
+
+//populates out as a document representation from text
+bool MainWindow::documentFromText(QString text, QDomDocument *out) {
+    if(text.isEmpty()) {
+        return false;
+    }
+
+    QDomDocument document;
+    try{
+        QString errorMsg;
+        int errorLine;
+        if( ! document.setContent(text, &errorMsg, &errorLine ) )
+        {
+            throw std::runtime_error( tr("Error parsing XML (line %1): %2").arg(errorLine).arg(errorMsg).toStdString() );
+        }
+        //---------------
+        std::vector<QString> registered_ID;
+        for (const auto& it: _treenode_models)
+        {
+            registered_ID.push_back( it.first );
+        }
+        // std::vector<QString> error_messages;
+        // bool done = VerifyXML(document, registered_ID, error_messages );
+
+        // if( !done )
+        // {
+        //     QString merged_error;
+        //     for (const auto& err: error_messages)
+        //     {
+        //         merged_error += err + "\n";
+        //     }
+        //     throw std::runtime_error( merged_error.toStdString() );
+        // }
+    }
+    catch( std::runtime_error& err)
+    {
+        QMessageBox messageBox;
+        messageBox.critical(this,"Error parsing the XML", err.what() );
+        messageBox.show();
+        return false;
+    }
+
+    *out = document;
+    return true;
+}
+
+std::vector<MainWindow::InvalidPortMapping> MainWindow::checkRequiredPorts() {
+    std::vector<MainWindow::InvalidPortMapping> invalid_mappings;
+
+    // Iterate through each sub tree
+    for (auto i : _tab_info) {
+        // Get behavior tree
+        AbsBehaviorTree tree = BuildTreeFromScene(i.second->scene());
+
+        // Iterator through each node in the tree
+        for (AbstractTreeNode node : tree.nodes()) {
+
+            // Get the PortModel
+            PortModels port_models = node.model.ports;
+            PortsMapping ports_mapping = node.ports_mapping;
+
+            // Iterate through each port_model. If the port is required, check to make sure
+            // the corresponding port_mapping is filled
+            for (auto mapping : ports_mapping) {
+                QString key = mapping.first;
+                auto port = port_models[key];
+
+                if (port.required) {
+                    // Get value from port_mapping
+                    QString value = mapping.second;
+                    if (value == "") {
+                        // Add invalid port mapping to be displayed to the screen
+                        MainWindow::InvalidPortMapping mapping = {  .sub_tree = i.first, 
+                                                        .node_id = node.model.registration_ID,
+                                                        .port = key};
+                        
+                        invalid_mappings.push_back(mapping);
+                    }
+                }
+            }
+        }
+    }
+
+    return invalid_mappings;
+}
+
+void MainWindow::saveCurrentTree(bool forceSaveAs) {
+    for (auto& it: _tab_info)
+    {
+        QString name = it.first; 
+        auto& container = it.second;
+        if( !container->containsValidTree() )
+        {
+            QMessageBox::warning(this, tr("Oops!"),
+                                 tr("Tree \"%1\" is invalid. File can not be saved").arg(name),
+                                 QMessageBox::Cancel);
+            return;
+        }
+    }
+
+    if( _tab_info.size() == 1 )
+    {
+        _main_tree = _tab_info.begin()->first;
+    }
+
+    std::vector<MainWindow::InvalidPortMapping> invalid_mappings = checkRequiredPorts();
+
+    if (invalid_mappings.size() > 0) {
+        QString message = "The following ports are marked 'required' yet they have no value assigned to them:\n\n";
+
+        for (auto mapping : invalid_mappings) {
+            message += "- Port '" + mapping.port + "' in node '" + mapping.node_id + "' in tree '" + mapping.sub_tree + "'\n\n";
+        }
+
+        QMessageBox::warning(this, tr("Oops!"),
+                                    message);
+        return;
+    }
+
+    QSettings settings;
+    QString directory_path  = settings.value("MainWindow.lastSaveDirectory",
+                                            QDir::currentPath() ).toString();
+
+    QString fileName = _current_file_name;
+    bool save_as = fileName.isEmpty() || forceSaveAs;
+    if(save_as) {
+        fileName = QFileDialog::getSaveFileName(this, "Save BehaviorTree to file",
+                                                 directory_path, "BehaviorTree files (*.xml)");
+    }
+
+    if (fileName.isEmpty()){
+        return;
+    }
+    if (!fileName.endsWith(".xml"))
+    {
+        fileName += ".xml";
+    }
+
+    //save current tree
+    QString xml_text = saveDocToXML();
+
+    QFile file(fileName);
+    if (file.open(QIODevice::WriteOnly)) {
+        QTextStream stream(&file);
+        stream << xml_text << endl;
+        file.close();
+    }
+
+    directory_path = QFileInfo(fileName).absolutePath();
+
+    //save workspace
+    QString work_dir = workspace_dir(directory_path);
+
+    if(save_as) {
+        //if saving as, overwrite current workspace with new one, then prompt user
+        NodeModels old_workspace(_workspace_models);
+        if(QDir(work_dir).exists()) {
+            tryLoadWorkspace(readFileToString(workspace_path(directory_path)));
+        }
+
+        //figure out which nodes are not already in new workspace
+        NodeModels unworkspacedModels;
+        for(auto& it : old_workspace) {
+            if(!isInNodeModels(_workspace_models, it.first)) {
+                unworkspacedModels.insert(it);
+            }
+        }
+
+        if(unworkspacedModels.size() > 0) {
+            QString msg = "The following node models were in the previous workspace but not in the new one:\n";
+            int count = 0;
+            for(auto& it : unworkspacedModels) {
+                msg += it.first + "\n";
+                count++;
+
+                if(count >= 3) {
+                    msg += tr("...and %1 more\n").arg(unworkspacedModels.size() - 3);
+                    break;
+                }
+            }
+
+            msg += "Would you like to add them to the new workspace?";
+            int ret = QMessageBox::question(this, "Add nodes to workspace?", msg, QMessageBox::Yes | QMessageBox::No);
+
+            if(ret == QMessageBox::Yes) {
+                for(auto& it : unworkspacedModels) {
+                    _workspace_models.insert(it);
+                }
+
+                _editor_widget->updateTreeView();
+            }
+        }
+    }
+
+    QString workspace_text = saveWorkspaceToXML(); //encode workspace as xml text
+
+    if(!QDir(work_dir).exists()) {
+        QDir().mkdir(work_dir);
+    }
+
+    QFile workspaceFile(workspace_path(directory_path));
+    if (workspaceFile.open(QIODevice::WriteOnly)) {
+        QTextStream stream(&workspaceFile);
+        stream << workspace_text << endl;
+        workspaceFile.close();
+    }
+
+    updateTreeInfo(true, fileName);
+    settings.setValue("MainWindow.lastSaveDirectory", directory_path);
+}
+
+
+void MainWindow::encodeSubtree(QString ID, QDomDocument *doc, QDomElement root, GraphicContainer *container) const {
+    auto scene = container->scene();
+
+    auto abs_tree = BuildTreeFromScene(container->scene());
+    auto abs_root = abs_tree.rootNode();
+    if( abs_root->children_index.size() == 1 &&
+        abs_root->model.registration_ID == "Root"  )
+    {
+        // mofe to the child of ROOT
+        abs_root = abs_tree.node( abs_root->children_index.front() );
+    }
+
+    QtNodes::Node* root_node = abs_root->graphic_node;
+
+    QDomElement root_element = doc->createElement("BehaviorTree");
+
+    root_element.setAttribute("ID", ID.toStdString().c_str());
+    root.appendChild(root_element);
+
+    RecursivelyCreateXml(*scene, *doc, root_element, root_node );
+}
+
+
+void MainWindow::encodeSubtree(QString ID, QDomDocument *doc, QDomElement root) const {
+    //encode subtrees
+    GraphicContainer* container = nullptr;
+    
+    //find the container containing the subtree to be encoded
+    for (auto& it: _tab_info) {
+        if(it.first == ID) {
+            container = it.second;
+            break;
+        }
+    }
+
+    if(container == nullptr) { //container was never found
+        return;
+    }
+
+    //encode subtree with found container
+    encodeSubtree(ID, doc, root, container);
+}
+
+void MainWindow::encodeNodeModel(NodeModel model, QString id, QDomDocument doc, QDomElement *node) const {
+    if( !node->isNull() )
+    {
+        node->setAttribute("ID", id);
+
+        for(const auto& port_it: model.ports)
+        {
+            const auto& port_name = port_it.first;
+            const auto& port = port_it.second;
+
+            QDomElement port_element = writePortModel(port_name, port, doc);
+            node->appendChild( port_element );
+        }
+    }
+}
+
+//use saved for current save status and _current_file_name for current file name 
+void MainWindow::updateTreeInfo(bool saved, QString fileName) {
+    //which icon to use on save button?
+    this->saved = saved;
+    QString icoFile = (saved ? ":/icons/svg/saved_white.svg" : ":/icons/svg/unsaved_white.svg");
+    ui->toolButtonSaveFile->setIcon(QIcon(icoFile));
+
+    _current_file_name = fileName;
+    QString fileStr = (!fileName.isEmpty() ? fileName : "No File loaded");
+    QString asterisk = (saved || fileName.isEmpty() ? "" : "*");
+
+    fileStr = tr("%1%2").arg(fileStr, asterisk); //add asterisk if file is unsaved
+    this->setWindowTitle(tr("Groot (%1)").arg(fileStr));
+}
+
+
+void MainWindow::ensureTreeSaved() {
+    if(_current_mode == GraphicMode::EDITOR && !saved) {
+        int save = QMessageBox::question(this, "Save Tree?", 
+                                        "You have unsaved changes to your Behavior Tree. Do you want to save them?", 
+                                        QMessageBox::No | QMessageBox::Yes);
+        
+        if(save == QMessageBox::Yes) {
+            saveCurrentTree(false);
+        }
+    }
 }
 
 
@@ -1274,6 +1577,7 @@ void MainWindow::updateCurrentMode()
     ui->toolButtonLoadRemote->setHidden( true );
 
     ui->toolButtonSaveFile->setHidden( NOT_EDITOR );
+    ui->toolButtonSaveFileAs->setHidden( NOT_EDITOR );
     ui->toolButtonReorder->setHidden( NOT_EDITOR );
 
     if( _current_mode == GraphicMode::EDITOR )
@@ -1415,6 +1719,10 @@ void MainWindow::on_actionEditor_mode_triggered()
 void MainWindow::on_actionMonitor_mode_triggered()
 {
 #ifdef ZMQ_FOUND
+    if(_current_mode == GraphicMode::EDITOR) {
+        ensureTreeSaved();
+    }
+
     QMessageBox::StandardButton res = QMessageBox::Ok;
 
     if( currentTabInfo()->scene()->nodes().size() > 0)
@@ -1436,6 +1744,10 @@ void MainWindow::on_actionMonitor_mode_triggered()
 
 void MainWindow::on_actionReplay_mode_triggered()
 {
+    if(_current_mode == GraphicMode::EDITOR) {
+        ensureTreeSaved();
+    }
+
     QMessageBox::StandardButton res = QMessageBox::Ok;
 
     if( currentTabInfo()->scene()->nodes().size() > 0)
@@ -1447,7 +1759,7 @@ void MainWindow::on_actionReplay_mode_triggered()
     }
     if( res == QMessageBox::Ok)
     {
-        onActionClearTriggered(true);
+        onClearRequested(true);
         _replay_widget->clear();
         _current_mode = GraphicMode::REPLAY;
         updateCurrentMode();
@@ -1652,6 +1964,7 @@ void MainWindow::onTabSetMainTree(int tab_index)
 
 void MainWindow::clearTreeModels()
 {
+    _workspace_models.clear();
     _treenode_models = BuiltinNodeModels();
 
     std::list<QString> ID_to_delete;

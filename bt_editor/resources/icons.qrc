@@ -41,7 +41,9 @@
         <file>BT-vertical.png</file>
         <file>svg/zoom_home.svg</file>
         <file>svg/save_dark.svg</file>
-        <file>svg/save_white.svg</file>
+        <file>svg/saved_white.svg</file>
+        <file>svg/unsaved_white.svg</file>
+        <file>svg/save_as_white.svg</file>
         <file>BT-edit.png</file>
         <file>BT-log.png</file>
         <file>BT-monitor.png</file>

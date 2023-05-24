@@ -10,6 +10,7 @@
 #include <deque>
 #include <thread>
 #include <mutex>
+#include <experimental/filesystem>
 #include <nodes/DataModelRegistry>
 
 #include "graphic_container.h"
@@ -45,9 +46,11 @@ public:
     explicit MainWindow(GraphicMode initial_mode, QWidget *parent = nullptr);
     ~MainWindow() override;
 
-    void loadFromXML(const QString &xml_text);
+    bool loadFromXML(const QString &xml_text, const QString &workspace_text = "");
 
-    QString saveToXML() const ;
+    QString saveDocToXML() const ;
+
+    QString saveWorkspaceToXML() const ;
 
     GraphicContainer* currentTabInfo();
 
@@ -66,6 +69,8 @@ public slots:
     void onAutoArrange();
 
     void onSceneChanged();
+
+    void onSidePaletteChanged();
 
     void onPushUndo();
 
@@ -90,6 +95,8 @@ public slots:
 
     void on_actionSave_triggered();
 
+    void on_actionSaveAs_triggered();
+
     void on_splitter_splitterMoved(int pos = 0, int index = 0);
 
     void on_toolButtonReorder_pressed();
@@ -112,9 +119,9 @@ public slots:
 
     void on_tabWidget_currentChanged(int index);
 
-    void onActionClearTriggered(bool create_new);
+    void onClearRequested(bool create_new);
 
-    void on_actionClear_triggered();
+    void on_actionNew_triggered();
 
     void onTreeNodeEdited(QString prev_ID, QString new_ID);
 
@@ -137,6 +144,30 @@ public:
     void lockEditing(const bool locked);
 
 private:
+
+    void tryLoadWorkspace(const QString& workspace_text, bool overwriteOldWorkspace);
+
+    bool documentFromText(QString text, QDomDocument *out);
+
+    struct InvalidPortMapping {
+        QString sub_tree;
+        QString node_id;
+        QString port;
+    };
+
+    std::vector<InvalidPortMapping> checkRequiredPorts();
+
+    void saveCurrentTree(bool forceSaveAs);
+
+    void encodeSubtree(QString ID, QDomDocument *doc, QDomElement root, GraphicContainer *container) const;
+    
+    void encodeSubtree(QString ID, QDomDocument *doc, QDomElement root) const;
+
+    void encodeNodeModel(NodeModel model, QString id, QDomDocument doc, QDomElement *node) const;
+
+    void updateTreeInfo(bool saved, QString file);
+    
+    void ensureTreeSaved();
 
     void updateCurrentMode();
 
@@ -169,6 +200,8 @@ private:
 
     void loadSavedStateFromJson(SavedState state);
 
+    
+
     QtNodes::Node *subTreeExpand(GraphicContainer& container,
                        QtNodes::Node &node,
                        SubtreeExpandOption option);
@@ -188,9 +221,14 @@ private:
     SavedState _current_state;
     QtNodes::PortLayout _current_layout;
 
-    NodeModels _treenode_models;
+    NodeModels 
+        _treenode_models, // registered collection of all node models in the tree.
+        _workspace_models; // unregistered collection of node models in the workspace
 
     QString _main_tree;
+    QString _current_file_name;
+
+    bool saved;
 
     SidepanelEditor* _editor_widget;
     SidepanelReplay* _replay_widget;
@@ -201,8 +239,6 @@ private:
     MainWindow::SavedState saveCurrentState();
     void clearUndoStacks();
 };
-
-
 
 
 

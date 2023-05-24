@@ -66,6 +66,12 @@ NodeModel buildTreeNodeModelFromXML(const QDomElement& node)
                 port_model.default_value = port_element.attribute("default");
             }
 
+            if (port_element.hasAttribute("required")) {
+                port_model.required = port_element.attribute("required") == "true";
+            } else {
+                port_model.required = false;
+            }
+
             if( port_element.hasAttribute("name") )
             {
                 auto attr_name = port_element.attribute("name");
@@ -182,27 +188,27 @@ void RecursivelyCreateXml(const FlowScene &scene, QDomDocument &doc, QDomElement
     }
 }
 
-bool VerifyXML(QDomDocument &doc,
-               const std::vector<QString>& registered_ID,
-               std::vector<QString>& error_messages)
-{
-    error_messages.clear();
-    try {
-        std::string xml_text = doc.toString().toStdString();
-        std::set<std::string> registered_nodes;
+// bool VerifyXML(QDomDocument &doc,
+//                const std::vector<QString>& registered_ID,
+//                std::vector<QString>& error_messages)
+// {
+//     error_messages.clear();
+//     try {
+//         std::string xml_text = doc.toString().toStdString();
+//         std::set<std::string> registered_nodes;
 
-        for(const auto& str: registered_ID)
-        {
-            registered_nodes.insert( str.toStdString() );
-        }
+//         for(const auto& str: registered_ID)
+//         {
+//             registered_nodes.insert( str.toStdString() );
+//         }
 
-        BT::VerifyXML(xml_text, registered_nodes); // may throw
-    } catch (std::exception& ex)
-    {
-        error_messages.push_back(ex.what());
-    }
-    return true;
-}
+//         BT::VerifyXML(xml_text, registered_nodes); // may throw
+//     } catch (std::exception& ex)
+//     {
+//         error_messages.push_back(ex.what());
+//     }
+//     return true;
+// }
 
 
 
@@ -231,6 +237,8 @@ QDomElement writePortModel(const QString& port_name, const PortModel& port, QDom
   {
     port_element.setAttribute("default", port.default_value);
   }
+
+  port_element.setAttribute("required", (port.required) ? "true" : "false");
 
   if (!port.description.isEmpty())
   {

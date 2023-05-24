@@ -347,7 +347,76 @@ QToolButton:disabled{
          </property>
          <property name="icon">
           <iconset resource="resources/icons.qrc">
-           <normaloff>:/icons/svg/save_white.svg</normaloff>:/icons/svg/save_white.svg</iconset>
+           <normaloff>:/icons/svg/saved_white.svg</normaloff>:/icons/svg/saved_white.svg</iconset>
+         </property>
+         <property name="iconSize">
+          <size>
+           <width>34</width>
+           <height>34</height>
+          </size>
+         </property>
+         <property name="checkable">
+          <bool>false</bool>
+         </property>
+         <property name="toolButtonStyle">
+          <enum>Qt::ToolButtonTextUnderIcon</enum>
+         </property>
+         <property name="autoRaise">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QToolButton" name="toolButtonSaveFileAs">
+         <property name="minimumSize">
+          <size>
+           <width>80</width>
+           <height>70</height>
+          </size>
+         </property>
+         <property name="maximumSize">
+          <size>
+           <width>80</width>
+           <height>70</height>
+          </size>
+         </property>
+         <property name="font">
+          <font>
+           <pointsize>9</pointsize>
+          </font>
+         </property>
+         <property name="focusPolicy">
+          <enum>Qt::NoFocus</enum>
+         </property>
+         <property name="autoFillBackground">
+          <bool>false</bool>
+         </property>
+         <property name="styleSheet">
+          <string notr="true">QToolButton {
+    color:white;
+}
+
+QToolButton:hover{
+   background-color: rgb(110, 110, 110);
+}
+
+QToolButton:pressed{
+  background-color: rgb(50, 150, 0)
+}
+
+QToolButton:disabled{
+  color:gray;
+  background-color: rgb(50, 50, 50)
+}
+</string>
+         </property>
+         <property name="text">
+          <string>Save Tree As</string>
+         </property>
+         <property name="icon">
+          <iconset>
+           <normalon>:/icons/svg/save_as_white.svg</normalon>
+          </iconset>
          </property>
          <property name="iconSize">
           <size>
@@ -750,7 +819,12 @@ QToolButton:disabled{
     <property name="title">
      <string>File</string>
     </property>
-    <addaction name="actionClear"/>
+    <addaction name="actionNew"/>
+    <addaction name="separator"/>
+    <addaction name="actionLoad"/>
+    <addaction name="actionSave"/>
+    <addaction name="actionSaveAs"/>
+    <addaction name="separator"/>
     <addaction name="actionQuit"/>
    </widget>
    <widget class="QMenu" name="menuMode">
@@ -807,9 +881,15 @@ QToolButton:disabled{
     <string>Load from remote server</string>
    </property>
   </action>
-  <action name="actionClear">
+  <action name="actionNew">
    <property name="text">
-    <string>Clear</string>
+    <string>New</string>
+   </property>
+   <property name="toolTip">
+    <string>New Tree</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+N</string>
    </property>
   </action>
   <action name="actionEditor_mode">
@@ -835,6 +915,17 @@ QToolButton:disabled{
   <action name="actionAbout">
    <property name="text">
     <string>About</string>
+   </property>
+  </action>
+  <action name="actionSaveAs">
+   <property name="text">
+    <string>Save As</string>
+   </property>
+   <property name="toolTip">
+    <string>Save As</string>
+   </property>
+   <property name="shortcut">
+    <string>Ctrl+Shift+S</string>
    </property>
   </action>
  </widget>

@@ -28,7 +28,7 @@ void ReplyTest::cleanupTestCase()
 {
     QApplication::processEvents();
     sleepAndRefresh( 1000 );
-    main_win->on_actionClear_triggered();
+    main_win->on_actionNew_triggered();
     main_win->close();
 }
 

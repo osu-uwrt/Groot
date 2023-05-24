@@ -141,6 +141,12 @@ BehaviorTreeDataModel::BehaviorTreeDataModel(const NodeModel &model):
                                       "background-color: rgb(200,200,200); "
                                       "border: 0px; ");
 
+            if (port_it.second.required) {
+                form_field->setToolTip("Required");
+            } else {
+                form_field->setToolTip("Not Required");
+            }
+
             _form_layout->addRow( form_label, form_field );
 
             auto paramUpdated = [this,label,form_field]()
