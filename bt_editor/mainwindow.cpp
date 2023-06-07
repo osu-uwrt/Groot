@@ -1182,6 +1182,25 @@ void MainWindow::on_actionNew_triggered()
 
 void MainWindow::onTreeNodeEdited(QString prev_ID, QString new_ID)
 {
+    //update workspace models. need to do it in this function rather than onAddToModelRegistry because this function has previous and new id
+    bool
+        oldIdInWorkspace = isInNodeModels(_workspace_models, prev_ID),
+        newIdInWorkspace = isInNodeModels(_workspace_models, new_ID);
+
+    if(newIdInWorkspace) {
+        _workspace_models.erase(new_ID);
+    }
+
+    //what if the node was renamed?
+    if(oldIdInWorkspace) {
+        _workspace_models.erase(prev_ID);
+    }
+
+    if(oldIdInWorkspace || newIdInWorkspace) {
+        //add model with new id to workspace
+        _workspace_models.insert({new_ID, _treenode_models[new_ID]});
+    }
+
     for (auto& it: _tab_info)
     {
         auto container = it.second;
