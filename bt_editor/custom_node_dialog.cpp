@@ -52,9 +52,9 @@ CustomNodeDialog::CustomNodeDialog(const NodeModels &models,
                 combo_direction->addItem("In/Out");
                 switch( port_it.second.direction )
                 {
-                case BT::PortDirection::INPUT : combo_direction->setCurrentIndex(0); break;
-                case BT::PortDirection::OUTPUT: combo_direction->setCurrentIndex(1); break;
-                case BT::PortDirection::INOUT : combo_direction->setCurrentIndex(2); break;
+                    case BT::PortDirection::INPUT : combo_direction->setCurrentIndex(0); break;
+                    case BT::PortDirection::OUTPUT: combo_direction->setCurrentIndex(1); break;
+                    case BT::PortDirection::INOUT : combo_direction->setCurrentIndex(2); break;
                 }
 
                 ui->tableWidget->setCellWidget(row,1, combo_direction );
@@ -115,11 +115,11 @@ NodeModel CustomNodeDialog::getTreeNodeModel() const
 
     switch( ui->comboBox->currentIndex() )
     {
-    case 0: type = NodeType::ACTION; break;
-    case 1: type = NodeType::CONDITION; break;
-    case 2: type = NodeType::CONTROL; break;
-    case 3: type = NodeType::SUBTREE; break;
-    case 4: type = NodeType::DECORATOR; break;
+        case 0: type = NodeType::ACTION; break;
+        case 1: type = NodeType::CONDITION; break;
+        case 2: type = NodeType::CONTROL; break;
+        case 3: type = NodeType::SUBTREE; break;
+        case 4: type = NodeType::DECORATOR; break;
     }
     for (int row=0; row < ui->tableWidget->rowCount(); row++ )
     {
@@ -136,7 +136,13 @@ NodeModel CustomNodeDialog::getTreeNodeModel() const
         port_model.description   =  ui->tableWidget->item(row,3)->text();
         
         QCheckBox* required_box = static_cast<QCheckBox*>(ui->tableWidget->cellWidget(row, 4));
-        port_model.required = required_box->checkState() == Qt::Checked;
+        if(required_box) //box may not show up for the shared_blackboard port for subtrees
+        {
+            port_model.required = required_box->checkState() == Qt::Checked;
+        } else {
+            port_model.required = false;
+        }
+        
         ports.insert( {key, port_model} );
     }
     return { type, ID, ports };
