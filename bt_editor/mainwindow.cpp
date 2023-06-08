@@ -297,9 +297,37 @@ void MainWindow::tryLoadWorkspace(const QString& workspace_text, bool overwriteO
 
         //read tree nodes model
         _workspace_models = ReadTreeNodesModel(workspace_root);
-        for(const auto& model: _workspace_models) {
-            if(!isInNodeModels(_treenode_models, model.first)) {
-                onAddToModelRegistry(model.second);
+        for(const auto& workspaceModelPair: _workspace_models) {
+            NodeModel workspaceModel = workspaceModelPair.second;
+            if(!isInNodeModels(_treenode_models, workspaceModelPair.first)) {
+                onAddToModelRegistry(workspaceModel);
+            } else {
+                //check that the ports match
+                bool portsMatch = true;
+                NodeModel treenodeModel = _treenode_models[workspaceModelPair.first];
+
+                if(treenodeModel.ports.size() == workspaceModel.ports.size()) {
+                    for(const auto& wsPortPair : treenodeModel.ports) {
+                        if(treenodeModel.ports.find(wsPortPair.first) == treenodeModel.ports.end()) {
+                            portsMatch = false;
+                            break;
+                        }
+                    }
+                } else {
+                    portsMatch = false;
+                }
+
+                if(!portsMatch) {
+                    int reply = QMessageBox::question(this, 
+                        "Conflicting Ports", 
+                        tr("Node %1's ports in the local model differ from that in the workspace. Overwrite the workspace model with the local one? (answer \"no\" to use the workspace model)").arg(treenodeModel.registration_ID),
+                        QMessageBox::Yes,
+                        QMessageBox::No);
+                    
+                    if(reply == QMessageBox::No) { //load the workspace model
+                        onAddToModelRegistry(workspaceModel);
+                    }
+                }
             }
         }
 
@@ -316,8 +344,6 @@ void MainWindow::tryLoadWorkspace(const QString& workspace_text, bool overwriteO
                 onCreateAbsBehaviorTree(tree, tree_name);
             }
         }
-
-        _editor_widget->updateTreeView();
     }
 }
 
@@ -352,8 +378,6 @@ bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_t
             NodeModel node = model.second;
             onAddToModelRegistry( node );
         }
-
-        _editor_widget->updateTreeView();
 
         onClearRequested(false);
 
@@ -401,6 +425,8 @@ bool MainWindow::loadFromXML(const QString& xml_text, const QString& workspace_t
         }
 
         tryLoadWorkspace(workspace_text);
+
+        _editor_widget->updateTreeView();
 
         auto models_to_remove = GetModelsToRemove(this, _treenode_models, _workspace_models, custom_models);
 
@@ -911,6 +937,10 @@ void MainWindow::onAddToModelRegistry(const NodeModel &model)
 
     _model_registry->registerModel( QString::fromStdString( toStr(model.type)), node_creator, ID);
 
+    if(_treenode_models.find(ID) != _treenode_models.end()) {
+        _treenode_models.erase(ID);
+    }
+    
     _treenode_models.insert( {ID, model } );
     _editor_widget->updateTreeView();
 }
